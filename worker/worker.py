@@ -224,15 +224,36 @@ def download_track(title: str, artist: str, out_dir: Path) -> tuple[Path, int]:
     mp3_link = data["link"]
     duration = int(data.get("duration") or 0)
 
+    log.info("  Link recebido: %s", mp3_link[:120])
+
     # 3. Baixa o MP3 do link
+    # Importante: servidores como 123tokyo.xyz bloqueiam User-Agents não-browser.
+    # Precisamos parecer um navegador real.
     out_path = out_dir / f"{uuid.uuid4()}.mp3"
+    download_headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/124.0 Safari/537.36"
+        ),
+        "Accept": "*/*",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Referer": "https://youtube-mp3.org/",
+        "Sec-Fetch-Mode": "cors",
+        "Sec-Fetch-Site": "cross-site",
+    }
     log.info("  Baixando MP3 (%s bytes)...", data.get("filesize", "?"))
-    with requests.get(mp3_link, stream=True, timeout=120) as r:
-        r.raise_for_status()
-        with open(out_path, "wb") as f:
-            for chunk in r.iter_content(chunk_size=8192):
-                if chunk:
-                    f.write(chunk)
+    try:
+        with requests.get(mp3_link, headers=download_headers, stream=True, timeout=120) as r:
+            r.raise_for_status()
+            with open(out_path, "wb") as f:
+                for chunk in r.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+    except requests.HTTPError as e:
+        # Se 404, mostra o link completo no log pra debug
+        log.error("  Erro %s baixando MP3. Link completo: %s", e.response.status_code, mp3_link)
+        raise
 
     if out_path.stat().st_size < 1000:
         raise RuntimeError("Arquivo baixado muito pequeno, provavelmente erro")
