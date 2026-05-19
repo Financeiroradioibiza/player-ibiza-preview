@@ -161,6 +161,23 @@ export default function PreviewEditor() {
     load()
   }
 
+  // Reordenar tracks (drag-and-drop)
+  async function reorderTracks(newOrder) {
+    // newOrder é um array com os IDs na nova ordem
+    // Atualizamos a posição localmente primeiro pra UI ser responsiva
+    const updated = newOrder.map((id, idx) => {
+      const t = tracks.find((x) => x.id === id)
+      return { ...t, position: idx }
+    })
+    setTracks(updated)
+    // Salva no banco em paralelo
+    await Promise.all(
+      newOrder.map((id, idx) =>
+        supabase.from('tracks').update({ position: idx }).eq('id', id)
+      )
+    )
+  }
+
   // --- Publicar (ativar) ---
   async function publish() {
     if (!tracks.some(t => t.status === 'approved')) {
@@ -337,53 +354,43 @@ pendingCount: ${pendingCount}`}
         </div>
       </div>
 
-      {/* Seção: Adicionar músicas (upload manual OU baixar do Spotify) */}
+      {/* Seção 2: Baixar do Spotify */}
       <div className="card" style={{ marginBottom: 20 }}>
         <h3 style={{ fontSize: 14, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--muted)', marginBottom: 12 }}>
-          2. Adicionar músicas
+          2. Baixar do Spotify
         </h3>
 
         {!isJobActive && (
-          <>
-            {/* Baixar do Spotify */}
-            <div style={{ marginBottom: 16 }}>
-              <label className="muted" style={{ fontSize: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: 8 }}>
-                Baixar do Spotify
-              </label>
-              <div style={{ display: 'flex', gap: 10 }}>
-                <input
-                  className="input"
-                  placeholder="https://open.spotify.com/playlist/..."
-                  value={playlistUrl}
-                  onChange={(e) => setPlaylistUrl(e.target.value)}
-                  style={{ flex: 1 }}
-                />
-                <button className="btn btn-accent" onClick={startDownload} disabled={submitting || !playlistUrl}>
-                  {submitting ? 'Enviando…' : 'Baixar playlist'}
-                </button>
-              </div>
-              {error && <div style={{ color: 'var(--rose)', marginTop: 8, fontSize: 13 }}>{error}</div>}
+          <div>
+            <p className="muted" style={{ fontSize: 12, marginBottom: 10 }}>
+              Cole o link de uma playlist do Spotify. O sistema gera os links MP3 prontos pra você baixar no computador.
+            </p>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <input
+                className="input"
+                placeholder="https://open.spotify.com/playlist/..."
+                value={playlistUrl}
+                onChange={(e) => setPlaylistUrl(e.target.value)}
+                style={{ flex: 1 }}
+              />
+              <button className="btn btn-accent" onClick={startDownload} disabled={submitting || !playlistUrl}>
+                {submitting ? 'Enviando…' : 'Baixar playlist'}
+              </button>
             </div>
-
-            {/* Divider */}
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: 12,
-              margin: '16px 0',
-            }}>
-              <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
-              <span className="muted" style={{ fontSize: 11, letterSpacing: '0.1em' }}>OU</span>
-              <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
-            </div>
-
-            {/* Upload manual */}
-            <div>
-              <label className="muted" style={{ fontSize: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: 8 }}>
-                Subir MP3 do computador
-              </label>
-              <UploadForm previewId={id} onUploaded={load} />
-            </div>
-          </>
+            {error && <div style={{ color: 'var(--rose)', marginTop: 8, fontSize: 13 }}>{error}</div>}
+          </div>
         )}
+      </div>
+
+      {/* Seção 3: Subir MP3 do computador */}
+      <div className="card" style={{ marginBottom: 20 }}>
+        <h3 style={{ fontSize: 14, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--muted)', marginBottom: 12 }}>
+          3. Subir MP3 do computador
+        </h3>
+        <p className="muted" style={{ fontSize: 12, marginBottom: 10 }}>
+          Selecione os MP3 do seu computador (os que baixou no passo 2 ou outros que tenha).
+        </p>
+        <UploadForm previewId={id} onUploaded={load} />
       </div>
 
       {/* Seção: Job ativo (obtendo links) ou pronto (lista pra baixar) */}
@@ -405,20 +412,14 @@ pendingCount: ${pendingCount}`}
         </div>
       )}
 
-      {/* Seção: Faixas (revisão) */}
+      {/* Seção 4: Revisar e aprovar */}
       {tracks.length > 0 && (
         <div className="card" style={{ marginBottom: 20 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 8 }}>
             <h3 style={{ fontSize: 14, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--muted)' }}>
-              {isJobActive ? 'Faixas baixadas até agora' : `3. Revisar e aprovar (${approvedCount}/${tracks.length} aprovadas)`}
+              4. Revisar e aprovar ({approvedCount}/{tracks.length} aprovadas)
             </h3>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              {!isJobActive && job?.status === 'done' && (
-                <span className="badge badge-active">Download concluído</span>
-              )}
-              {!isJobActive && job?.status === 'failed' && (
-                <span className="badge badge-expired" title={job.error_message}>Download falhou</span>
-              )}
               {pendingCount > 0 && (
                 <button className="btn btn-accent btn-sm" onClick={approveAll}>
                   ✓ Aprovar todas ({pendingCount})
@@ -426,24 +427,26 @@ pendingCount: ${pendingCount}`}
               )}
             </div>
           </div>
-          <div style={{ display: 'grid', gap: 6 }}>
-            {tracks.map((t) => (
-              <TrackRow key={t.id} track={t}
-                onApprove={() => approveTrack(t)}
-                onReject={() => rejectTrack(t)} />
-            ))}
-          </div>
+          <p className="muted" style={{ fontSize: 12, marginBottom: 12 }}>
+            Arraste as músicas pelo ícone <span style={{ display: 'inline-block', padding: '0 4px' }}>⋮⋮</span> para definir a ordem que tocarão para o cliente.
+          </p>
+          <SortableTracksList
+            tracks={tracks}
+            onApprove={approveTrack}
+            onReject={rejectTrack}
+            onReorder={reorderTracks}
+          />
         </div>
       )}
 
-      {/* Seção: Publicar */}
+      {/* Seção 5: Publicar */}
       {tracks.length > 0 && !isJobActive && (
         <div className="card" style={{
           background: approvedCount > 0 ? 'rgba(34, 56, 255, 0.04)' : undefined,
           border: approvedCount > 0 ? '1px solid var(--cobalt)' : undefined,
         }}>
           <h3 style={{ fontSize: 14, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--muted)', marginBottom: 8 }}>
-            4. Publicar para o cliente
+            5. Publicar para o cliente
           </h3>
           <p style={{ fontSize: 14, marginBottom: 12 }}>
             {approvedCount === 0 && 'Aprove pelo menos uma música para publicar.'}
@@ -464,7 +467,7 @@ pendingCount: ${pendingCount}`}
   )
 }
 
-function TrackRow({ track, onApprove, onReject }) {
+function TrackRow({ track, onApprove, onReject, position }) {
   const [url, setUrl] = useState(null)
   const [playing, setPlaying] = useState(false)
   const [progress, setProgress] = useState(0)
@@ -555,6 +558,21 @@ function TrackRow({ track, onApprove, onReject }) {
       transition: 'padding 0.15s',
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        {/* Drag handle + número da posição */}
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 6,
+          color: 'var(--muted)', flexShrink: 0,
+          cursor: 'grab',
+          userSelect: 'none',
+        }}
+        title="Arraste para reordenar"
+        >
+          <span style={{ fontSize: 16, lineHeight: 1, letterSpacing: '-1px' }}>⋮⋮</span>
+          <span className="mono" style={{ fontSize: 12, minWidth: 18, textAlign: 'right' }}>
+            {position ? String(position).padStart(2, '0') : ''}
+          </span>
+        </div>
+
         <button onClick={togglePlay} disabled={!track.storage_path} style={{
           width: 36, height: 36, borderRadius: '50%',
           background: 'var(--ink)', color: 'var(--cream)',
@@ -664,7 +682,6 @@ function TrackRow({ track, onApprove, onReject }) {
 function UploadForm({ previewId, onUploaded }) {
   const [files, setFiles] = useState([])
   const [uploading, setUploading] = useState(false)
-  const [progress, setProgress] = useState({ done: 0, total: 0, current: '' })
   const [error, setError] = useState('')
   const fileRef = useRef(null)
 
@@ -767,26 +784,53 @@ function UploadForm({ previewId, onUploaded }) {
     return { artist: 'Desconhecido', title: base.trim() }
   }
 
+  // Status de cada arquivo na fila
+  const [fileStatuses, setFileStatuses] = useState([])
+
   async function uploadAll() {
     if (files.length === 0) return
     setError('')
     setUploading(true)
-    setProgress({ done: 0, total: files.length, current: '' })
+
+    // Inicializa o status de cada arquivo
+    const initial = files.map((f) => ({
+      name: f.name,
+      stage: 'queued', // queued | reading | uploading | saving | done | failed
+      error: null,
+    }))
+    setFileStatuses(initial)
+
+    const updateStatus = (idx, patch) => {
+      setFileStatuses((prev) => {
+        const next = [...prev]
+        next[idx] = { ...next[idx], ...patch }
+        return next
+      })
+    }
 
     try {
       const { data: { user } } = await supabase.auth.getUser()
       for (let i = 0; i < files.length; i++) {
         const file = files[i]
-        setProgress({ done: i, total: files.length, current: file.name })
         try {
+          updateStatus(i, { stage: 'reading' })
           const { title, artist } = await extractMetadata(file)
           const ext = file.name.split('.').pop().toLowerCase()
-          const path = `${crypto.randomUUID()}.${ext}`
+          const safeExt = /^[a-z0-9]{1,5}$/.test(ext) ? ext : 'mp3'
+          const path = `${crypto.randomUUID()}.${safeExt}`
 
+          updateStatus(i, { stage: 'uploading' })
+          // Cria um Blob "limpo" sem o nome original (evita issues com caracteres
+          // especiais no Supabase Storage como [ ] ( ) etc)
+          const blob = new Blob([file], { type: file.type || 'audio/mpeg' })
           const { error: upErr } = await supabase.storage
-            .from('tracks').upload(path, file, { upsert: false })
+            .from('tracks').upload(path, blob, {
+              upsert: false,
+              contentType: file.type || 'audio/mpeg',
+            })
           if (upErr) throw upErr
 
+          updateStatus(i, { stage: 'saving' })
           const duration = await getAudioDuration(file)
           const { error: insErr } = await supabase.from('tracks').insert({
             preview_id: previewId,
@@ -799,14 +843,22 @@ function UploadForm({ previewId, onUploaded }) {
             created_by: user.id,
           })
           if (insErr) throw insErr
+
+          updateStatus(i, { stage: 'done' })
         } catch (e) {
           console.error('Erro em', file.name, e)
+          const errMsg = e?.message || e?.error || JSON.stringify(e) || String(e)
+          updateStatus(i, { stage: 'failed', error: errMsg.slice(0, 200) })
         }
       }
-      setProgress({ done: files.length, total: files.length, current: '' })
-      setFiles([])
-      if (fileRef.current) fileRef.current.value = ''
-      onUploaded()
+
+      // Aguarda um pouco pra mostrar o resultado, depois limpa
+      setTimeout(() => {
+        setFiles([])
+        if (fileRef.current) fileRef.current.value = ''
+        setFileStatuses([])
+        onUploaded()
+      }, 1500)
     } catch (e) {
       setError(e.message || 'Erro no upload')
     } finally {
@@ -853,25 +905,150 @@ function UploadForm({ previewId, onUploaded }) {
           <p className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
             <strong>Como funciona:</strong> usamos a tag interna do MP3 (ID3) para pegar nome e artista corretos. Se o arquivo não tiver tag, usamos o nome do arquivo (formato <span className="mono">"Artista - Música"</span>).
           </p>
-          <div style={{ maxHeight: 200, overflowY: 'auto', display: 'grid', gap: 4, marginBottom: 12 }}>
-            {files.map((f, i) => (
-              <div key={i} style={{ fontSize: 12, color: 'var(--muted)' }}>
-                · {f.name}
+
+          {/* Barra de progresso geral */}
+          {uploading && (
+            <div style={{ marginBottom: 12 }}>
+              <div style={{
+                height: 8, background: 'var(--cream-soft)', borderRadius: 4,
+                overflow: 'hidden', marginBottom: 6,
+              }}>
+                <div style={{
+                  width: `${(fileStatuses.filter(s => s.stage === 'done' || s.stage === 'failed').length / files.length) * 100}%`,
+                  height: '100%', background: 'var(--cobalt)',
+                  transition: 'width 0.3s',
+                }} />
               </div>
-            ))}
-          </div>
-          <button className="btn btn-accent" onClick={uploadAll} disabled={uploading}>
-            {uploading ? `Enviando ${progress.done}/${progress.total}…` : `Enviar ${files.length} arquivo(s)`}
-          </button>
-          {uploading && progress.current && (
-            <span className="muted" style={{ marginLeft: 12, fontSize: 12 }}>
-              {progress.current}
-            </span>
+              <div className="muted" style={{ fontSize: 11 }}>
+                {fileStatuses.filter(s => s.stage === 'done').length} concluídos ·{' '}
+                {fileStatuses.filter(s => s.stage === 'failed').length} falharam ·{' '}
+                {fileStatuses.filter(s => s.stage !== 'done' && s.stage !== 'failed').length} restantes
+              </div>
+            </div>
           )}
+
+          {/* Lista de arquivos com status */}
+          <div style={{ maxHeight: 280, overflowY: 'auto', display: 'grid', gap: 4, marginBottom: 12 }}>
+            {files.map((f, i) => {
+              const status = fileStatuses[i]
+              return (
+                <div key={i} style={{
+                  fontSize: 12, padding: '6px 10px',
+                  background: status?.stage === 'failed' ? 'rgba(220,38,38,0.05)'
+                            : status?.stage === 'done' ? 'rgba(34,197,94,0.06)'
+                            : 'var(--cream-soft)',
+                  borderRadius: 4,
+                  display: 'flex', alignItems: 'center', gap: 8,
+                }}>
+                  <span style={{ width: 18, flexShrink: 0, fontSize: 13 }}>
+                    {status?.stage === 'done' && '✓'}
+                    {status?.stage === 'failed' && '✗'}
+                    {status?.stage === 'reading' && '📖'}
+                    {status?.stage === 'uploading' && '⬆️'}
+                    {status?.stage === 'saving' && '💾'}
+                    {(!status || status.stage === 'queued') && '·'}
+                  </span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{
+                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                      color: status?.stage === 'failed' ? 'var(--rose)' : 'var(--ink)',
+                    }}>
+                      {f.name}
+                    </div>
+                    {status?.stage === 'reading' && <span className="muted" style={{ fontSize: 10 }}>Lendo tags ID3…</span>}
+                    {status?.stage === 'uploading' && <span className="muted" style={{ fontSize: 10 }}>Enviando para o servidor…</span>}
+                    {status?.stage === 'saving' && <span className="muted" style={{ fontSize: 10 }}>Salvando no banco…</span>}
+                    {status?.stage === 'done' && <span style={{ fontSize: 10, color: '#16a34a' }}>Concluído</span>}
+                    {status?.stage === 'failed' && <span style={{ fontSize: 10, color: 'var(--rose)' }}>{status.error}</span>}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+
+          <button className="btn btn-accent" onClick={uploadAll} disabled={uploading}>
+            {uploading
+              ? `Enviando… (${fileStatuses.filter(s => s.stage === 'done').length}/${files.length})`
+              : `Enviar ${files.length} arquivo(s)`}
+          </button>
         </div>
       )}
 
       {error && <div style={{ color: 'var(--rose)', marginTop: 10, fontSize: 14 }}>{error}</div>}
+    </div>
+  )
+}
+
+// ============================================================
+// Lista de tracks com drag-and-drop para reordenar
+// ============================================================
+function SortableTracksList({ tracks, onApprove, onReject, onReorder }) {
+  const [dragIdx, setDragIdx] = useState(null)
+  const [overIdx, setOverIdx] = useState(null)
+
+  function onDragStart(e, idx) {
+    setDragIdx(idx)
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', String(idx))
+  }
+
+  function onDragOver(e, idx) {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    setOverIdx(idx)
+  }
+
+  function onDragLeave() {
+    setOverIdx(null)
+  }
+
+  function onDrop(e, targetIdx) {
+    e.preventDefault()
+    if (dragIdx === null || dragIdx === targetIdx) {
+      setDragIdx(null)
+      setOverIdx(null)
+      return
+    }
+    // Reorganiza a lista
+    const newOrder = tracks.map(t => t.id)
+    const [moved] = newOrder.splice(dragIdx, 1)
+    newOrder.splice(targetIdx, 0, moved)
+    onReorder(newOrder)
+    setDragIdx(null)
+    setOverIdx(null)
+  }
+
+  function onDragEnd() {
+    setDragIdx(null)
+    setOverIdx(null)
+  }
+
+  return (
+    <div style={{ display: 'grid', gap: 6 }}>
+      {tracks.map((t, idx) => (
+        <div
+          key={t.id}
+          draggable
+          onDragStart={(e) => onDragStart(e, idx)}
+          onDragOver={(e) => onDragOver(e, idx)}
+          onDragLeave={onDragLeave}
+          onDrop={(e) => onDrop(e, idx)}
+          onDragEnd={onDragEnd}
+          style={{
+            opacity: dragIdx === idx ? 0.4 : 1,
+            transform: overIdx === idx && dragIdx !== idx ? 'translateY(-2px)' : 'none',
+            borderTop: overIdx === idx && dragIdx !== idx ? '2px solid var(--cobalt)' : '2px solid transparent',
+            transition: 'transform 0.15s, border-color 0.15s',
+          }}
+        >
+          <TrackRow
+            track={t}
+            position={idx + 1}
+            onApprove={() => onApprove(t)}
+            onReject={() => onReject(t)}
+          />
+        </div>
+      ))}
     </div>
   )
 }
