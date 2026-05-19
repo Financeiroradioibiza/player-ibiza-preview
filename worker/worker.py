@@ -253,6 +253,7 @@ def process_job(job: dict):
                 local_path.unlink(missing_ok=True)
 
                 track_res = sb.table("tracks").insert({
+                    "preview_id": job.get("preview_id"),
                     "title": item["title"],
                     "artist": item["artist"] or "Desconhecido",
                     "storage_path": remote_name,
