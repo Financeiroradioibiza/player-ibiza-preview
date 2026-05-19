@@ -380,6 +380,31 @@ pendingCount: ${pendingCount}`}
             {error && <div style={{ color: 'var(--rose)', marginTop: 8, fontSize: 13 }}>{error}</div>}
           </div>
         )}
+
+        {/* Painel do job — fica dentro da seção 2 */}
+        {job && job.status !== 'failed' && (
+          <div style={{ marginTop: isJobActive ? 0 : 16 }}>
+            <SpotifyJobPanel
+              job={job}
+              jobItems={jobItems}
+              previewId={id}
+              onUploaded={load}
+            />
+          </div>
+        )}
+
+        {job && job.status === 'failed' && (
+          <div style={{
+            marginTop: 12,
+            padding: 12,
+            background: 'rgba(220, 38, 38, 0.05)',
+            border: '1px solid rgba(220, 38, 38, 0.2)',
+            borderRadius: 'var(--radius-sm)',
+          }}>
+            <strong style={{ fontSize: 13, color: 'var(--rose)' }}>Falha ao processar playlist</strong>
+            <p style={{ fontSize: 12, marginTop: 4 }}>{job.error_message}</p>
+          </div>
+        )}
       </div>
 
       {/* Seção 3: Subir MP3 do computador */}
@@ -392,25 +417,6 @@ pendingCount: ${pendingCount}`}
         </p>
         <UploadForm previewId={id} onUploaded={load} />
       </div>
-
-      {/* Seção: Job ativo (obtendo links) ou pronto (lista pra baixar) */}
-      {job && job.status !== 'failed' && (
-        <SpotifyJobPanel
-          job={job}
-          jobItems={jobItems}
-          previewId={id}
-          onUploaded={load}
-        />
-      )}
-
-      {job && job.status === 'failed' && (
-        <div className="card" style={{ marginBottom: 20, background: 'rgba(220, 38, 38, 0.05)' }}>
-          <h3 style={{ fontSize: 14, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--rose)', marginBottom: 8 }}>
-            Falha ao processar playlist
-          </h3>
-          <p style={{ fontSize: 13 }}>{job.error_message}</p>
-        </div>
-      )}
 
       {/* Seção 4: Revisar e aprovar */}
       {tracks.length > 0 && (
@@ -809,7 +815,18 @@ function UploadForm({ previewId, onUploaded }) {
     }
 
     try {
-      const { data: { user } } = await supabase.auth.getUser()
+      // Renova a sessão antes de tudo (evita 400 se o token tiver expirado)
+      const { data: refreshed, error: refreshErr } = await supabase.auth.refreshSession()
+      if (refreshErr) {
+        // Se falhar renovar, tenta pegar o user atual mesmo assim
+        console.warn('Falha ao renovar sessão:', refreshErr)
+      }
+      const userData = refreshed?.user || (await supabase.auth.getUser()).data?.user
+      if (!userData) {
+        throw new Error('Sessão expirou. Faça login novamente.')
+      }
+      const user = userData
+
       for (let i = 0; i < files.length; i++) {
         const file = files[i]
         try {
@@ -860,7 +877,12 @@ function UploadForm({ previewId, onUploaded }) {
         onUploaded()
       }, 1500)
     } catch (e) {
-      setError(e.message || 'Erro no upload')
+      const msg = e?.message || String(e)
+      if (msg.includes('Sessão') || msg.includes('JWT') || msg.includes('expired') || msg.includes('401')) {
+        setError('Sua sessão expirou. Recarregue a página e faça login novamente.')
+      } else {
+        setError(msg || 'Erro no upload')
+      }
     } finally {
       setUploading(false)
     }
@@ -1088,8 +1110,14 @@ function SpotifyJobPanel({ job, jobItems, previewId, onUploaded }) {
   }
 
   return (
-    <div className="card" style={{ marginBottom: 20, background: isProcessing ? 'rgba(34, 56, 255, 0.04)' : undefined }}>
-      <h3 style={{ fontSize: 14, textTransform: 'uppercase', letterSpacing: '0.08em', color: isProcessing ? 'var(--cobalt)' : 'var(--muted)', marginBottom: 12 }}>
+    <div style={{
+      marginBottom: 0,
+      padding: 16,
+      background: isProcessing ? 'rgba(34, 56, 255, 0.04)' : 'var(--cream-soft)',
+      borderRadius: 'var(--radius-sm)',
+      border: '1px solid var(--border)',
+    }}>
+      <h3 style={{ fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.08em', color: isProcessing ? 'var(--cobalt)' : 'var(--muted)', marginBottom: 12 }}>
         {isProcessing
           ? `Obtendo links… ${job.completed_tracks}/${job.total_tracks || '—'}`
           : `Playlist pronta — ${ready.length} música${ready.length !== 1 ? 's' : ''} para baixar`}
