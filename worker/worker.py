@@ -43,8 +43,19 @@ log = logging.getLogger("worker")
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_KEY = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
 POLL = int(os.environ.get("POLL_INTERVAL_SECONDS", "10"))
+YOUTUBE_COOKIES = os.environ.get("YOUTUBE_COOKIES", "").strip()
 
 sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+# Salva cookies do YouTube em arquivo (se a env var estiver definida)
+COOKIES_PATH = None
+if YOUTUBE_COOKIES:
+    COOKIES_PATH = "/tmp/yt_cookies.txt"
+    with open(COOKIES_PATH, "w") as f:
+        f.write(YOUTUBE_COOKIES)
+    log.info("Cookies do YouTube carregados.")
+else:
+    log.warning("YOUTUBE_COOKIES não definido. YouTube pode bloquear o download.")
 
 
 # ============================================================
@@ -148,7 +159,22 @@ def download_track(title: str, artist: str, out_dir: Path) -> tuple[Path, int]:
             "preferredquality": "192",
         }],
         "default_search": "ytsearch",
+        # Headers que imitam um navegador comum
+        "http_headers": {
+            "User-Agent": (
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/124.0 Safari/537.36"
+            ),
+        },
+        # Usa o cliente "android" do YouTube, que sofre menos com bot detection
+        "extractor_args": {
+            "youtube": {"player_client": ["android", "web"]},
+        },
     }
+    if COOKIES_PATH:
+        opts["cookiefile"] = COOKIES_PATH
+
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(query, download=True)
         if "entries" in info:
