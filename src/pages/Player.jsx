@@ -2,7 +2,25 @@ import { useEffect, useState, useRef } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase.js'
 
-// Gera/recupera um session id único por navegador
+// Paleta Radio Ibiza
+const RI = {
+  bg: '#0a0a0a',
+  bgSoft: '#141414',
+  bgCard: '#1a1a1a',
+  pink: '#ff2e8a',
+  pinkDeep: '#e01872',
+  yellow: '#ffe70a',
+  yellowSoft: '#fff36e',
+  textPrimary: '#ffffff',
+  textMuted: 'rgba(255,255,255,0.55)',
+  textDim: 'rgba(255,255,255,0.35)',
+  border: 'rgba(255,255,255,0.08)',
+  borderStrong: 'rgba(255,255,255,0.16)',
+}
+
+const FONT_DISPLAY = "'Oswald', 'Bebas Neue', 'Impact', sans-serif"
+const FONT_BODY = "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+
 function getSessionId() {
   let s = localStorage.getItem('rb_session')
   if (!s) {
@@ -17,7 +35,7 @@ export default function Player() {
   const navigate = useNavigate()
   const [inputCode, setInputCode] = useState('')
   const [preview, setPreview] = useState(null)
-  const [feedbackMap, setFeedbackMap] = useState({}) // track_id -> { vote, comment }
+  const [feedbackMap, setFeedbackMap] = useState({})
   const [state, setState] = useState(paramCode ? 'loading' : 'idle')
   const [error, setError] = useState('')
 
@@ -70,72 +88,239 @@ export default function Player() {
     navigate(`/player/${cleaned}`)
   }
 
-  if (state === 'idle') {
-    return (
-      <Shell>
-        <div style={{ maxWidth: 420, width: '100%', textAlign: 'center' }}>
-          <div className="mono" style={{
-            fontSize: 11, letterSpacing: '0.3em', color: 'var(--cobalt)', marginBottom: 18,
-          }}>RADIO · IBIZA</div>
-          <h1 className="display" style={{
-            fontSize: 56, fontWeight: 400, letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 12,
-          }}>
-            Preview <em style={{ color: 'var(--cobalt)' }}>exclusivo</em>.
-          </h1>
-          <p className="muted" style={{ marginBottom: 32 }}>Digite o código que você recebeu.</p>
-          <form onSubmit={submit} style={{ display: 'grid', gap: 12 }}>
-            <input className="input mono" placeholder="IBZ-XXXXX"
-              value={inputCode}
-              onChange={(e) => setInputCode(e.target.value.toUpperCase())}
-              style={{ fontSize: 22, textAlign: 'center', letterSpacing: '0.15em', padding: '14px 16px' }}
-              autoFocus />
-            <button className="btn btn-primary" style={{ justifyContent: 'center', padding: '12px' }}
-              disabled={!inputCode.trim()}>
-              Acessar
-            </button>
-          </form>
-        </div>
-      </Shell>
-    )
-  }
+  return (
+    <>
+      <FontLoader />
+      {state === 'idle' && <IdleScreen inputCode={inputCode} setInputCode={setInputCode} submit={submit} />}
+      {state === 'loading' && <CenteredMessage text="CARREGANDO" />}
+      {state === 'expired' && <ExpiredScreen />}
+      {state === 'notfound' && <NotFoundScreen error={error} />}
+      {state === 'playing' && <PlayerView preview={preview} feedbackMap={feedbackMap} setFeedbackMap={setFeedbackMap} />}
+    </>
+  )
+}
 
-  if (state === 'loading') return <Shell><div className="muted">Carregando…</div></Shell>
+function FontLoader() {
+  return (
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap"
+    />
+  )
+}
 
-  if (state === 'expired') {
-    return (
-      <Shell>
-        <div style={{ maxWidth: 420, textAlign: 'center' }}>
-          <div className="display" style={{ fontSize: 80, color: 'var(--rose)', lineHeight: 1, marginBottom: 16 }}>·</div>
-          <h1 className="display" style={{ fontSize: 36, fontWeight: 400, marginBottom: 12 }}>Preview expirado</h1>
-          <p className="muted">O período de validação deste preview já encerrou.</p>
-          <Link to="/" className="btn btn-ghost" style={{ marginTop: 24 }}>← Voltar</Link>
-        </div>
-      </Shell>
-    )
-  }
+// ============================================================
+// Tela de entrada de código
+// ============================================================
+function IdleScreen({ inputCode, setInputCode, submit }) {
+  return (
+    <Shell>
+      <div style={{ maxWidth: 480, width: '100%' }}>
+        <Logo />
+        <h1 style={{
+          fontFamily: FONT_DISPLAY,
+          fontSize: 'clamp(48px, 8vw, 72px)',
+          fontWeight: 700,
+          lineHeight: 0.95,
+          letterSpacing: '0.01em',
+          marginTop: 32,
+          marginBottom: 12,
+          textTransform: 'uppercase',
+        }}>
+          SUA <span style={{ color: RI.pink }}>IDENTIDADE</span><br />
+          MUSICAL
+        </h1>
+        <p style={{ color: RI.textMuted, fontSize: 16, marginBottom: 32, lineHeight: 1.5 }}>
+          Digite o código que você recebeu para acessar seu preview exclusivo.
+        </p>
+        <form onSubmit={submit} style={{ display: 'grid', gap: 14 }}>
+          <input
+            placeholder="IBZ-XXXXX"
+            value={inputCode}
+            onChange={(e) => setInputCode(e.target.value.toUpperCase())}
+            autoFocus
+            style={{
+              padding: '18px 20px',
+              fontSize: 22,
+              fontFamily: FONT_DISPLAY,
+              letterSpacing: '0.2em',
+              textAlign: 'center',
+              background: RI.bgSoft,
+              border: `1px solid ${RI.borderStrong}`,
+              borderRadius: 4,
+              color: RI.textPrimary,
+              outline: 'none',
+              textTransform: 'uppercase',
+            }}
+          />
+          <button
+            type="submit"
+            disabled={!inputCode.trim()}
+            style={{
+              padding: '16px',
+              background: RI.pink,
+              color: 'white',
+              border: 'none',
+              borderRadius: 4,
+              fontSize: 14,
+              fontWeight: 700,
+              letterSpacing: '0.12em',
+              textTransform: 'uppercase',
+              cursor: inputCode.trim() ? 'pointer' : 'not-allowed',
+              opacity: inputCode.trim() ? 1 : 0.4,
+              transition: 'background 0.15s',
+            }}
+            onMouseEnter={(e) => { if (inputCode.trim()) e.target.style.background = RI.pinkDeep }}
+            onMouseLeave={(e) => e.target.style.background = RI.pink}
+          >
+            Acessar Preview
+          </button>
+        </form>
+        <p style={{ color: RI.textDim, fontSize: 12, marginTop: 24, textAlign: 'center' }}>
+          Radio Ibiza · Identidade Musical para marcas
+        </p>
+      </div>
+    </Shell>
+  )
+}
 
-  if (state === 'notfound') {
-    return (
-      <Shell>
-        <div style={{ maxWidth: 420, textAlign: 'center' }}>
-          <h1 className="display" style={{ fontSize: 36, fontWeight: 400, marginBottom: 12 }}>Código não encontrado</h1>
-          <p className="muted" style={{ marginBottom: 24 }}>Confira se digitou corretamente.</p>
-          {error && <p style={{ fontSize: 12, color: 'var(--rose)', marginBottom: 16 }}>{error}</p>}
-          <Link to="/player" className="btn btn-primary">Tentar outro código</Link>
-        </div>
-      </Shell>
-    )
-  }
-
-  return <PlayerView preview={preview} feedbackMap={feedbackMap} setFeedbackMap={setFeedbackMap} />
+function Logo() {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+      {/* Estrela/explosão da Radio Ibiza */}
+      <svg width="44" height="44" viewBox="0 0 100 100" style={{ flexShrink: 0 }}>
+        <g transform="translate(50,50)">
+          {[...Array(16)].map((_, i) => {
+            const angle = (i / 16) * 360
+            const len = i % 2 === 0 ? 42 : 28
+            return (
+              <line
+                key={i}
+                x1="0" y1="0"
+                x2={Math.cos((angle * Math.PI) / 180) * len}
+                y2={Math.sin((angle * Math.PI) / 180) * len}
+                stroke={RI.yellow}
+                strokeWidth="3"
+              />
+            )
+          })}
+          <circle r="14" fill={RI.bg} stroke={RI.yellow} strokeWidth="2" />
+        </g>
+      </svg>
+      <div style={{
+        fontFamily: FONT_DISPLAY,
+        fontSize: 24,
+        fontWeight: 700,
+        letterSpacing: '0.08em',
+        lineHeight: 1,
+      }}>
+        RADIO<br />
+        <span style={{ color: RI.yellow }}>IBIZA</span>
+      </div>
+    </div>
+  )
 }
 
 function Shell({ children }) {
   return (
     <div style={{
-      minHeight: '100vh', display: 'grid', placeItems: 'center', padding: '40px 20px',
-      background: 'radial-gradient(ellipse at top, #fffaf0 0%, var(--cream) 70%)',
-    }}>{children}</div>
+      minHeight: '100vh',
+      background: RI.bg,
+      color: RI.textPrimary,
+      display: 'grid',
+      placeItems: 'center',
+      padding: '40px 24px',
+      fontFamily: FONT_BODY,
+    }}>
+      {children}
+    </div>
+  )
+}
+
+function CenteredMessage({ text }) {
+  return (
+    <Shell>
+      <div style={{
+        fontFamily: FONT_DISPLAY,
+        letterSpacing: '0.3em',
+        color: RI.textMuted,
+        fontSize: 14,
+      }}>{text}…</div>
+    </Shell>
+  )
+}
+
+function ExpiredScreen() {
+  return (
+    <Shell>
+      <div style={{ maxWidth: 460, textAlign: 'center' }}>
+        <Logo />
+        <div style={{
+          display: 'inline-block',
+          marginTop: 40, marginBottom: 16,
+          padding: '6px 14px',
+          background: RI.pink,
+          color: 'white',
+          fontSize: 11,
+          fontWeight: 700,
+          letterSpacing: '0.15em',
+          textTransform: 'uppercase',
+        }}>
+          PREVIEW EXPIRADO
+        </div>
+        <h1 style={{
+          fontFamily: FONT_DISPLAY,
+          fontSize: 44,
+          fontWeight: 700,
+          letterSpacing: '0.01em',
+          textTransform: 'uppercase',
+          marginBottom: 16,
+        }}>
+          O Período<br />Encerrou.
+        </h1>
+        <p style={{ color: RI.textMuted, fontSize: 15, lineHeight: 1.5 }}>
+          Entre em contato com a Radio Ibiza para mais informações sobre sua identidade musical.
+        </p>
+      </div>
+    </Shell>
+  )
+}
+
+function NotFoundScreen({ error }) {
+  return (
+    <Shell>
+      <div style={{ maxWidth: 460, textAlign: 'center' }}>
+        <Logo />
+        <h1 style={{
+          fontFamily: FONT_DISPLAY,
+          fontSize: 44,
+          fontWeight: 700,
+          letterSpacing: '0.01em',
+          textTransform: 'uppercase',
+          marginTop: 40, marginBottom: 16,
+        }}>
+          Código <span style={{ color: RI.pink }}>Inválido</span>
+        </h1>
+        <p style={{ color: RI.textMuted, fontSize: 15, marginBottom: 28 }}>
+          Confira se digitou corretamente.
+        </p>
+        {error && <p style={{ fontSize: 12, color: RI.pink, marginBottom: 16 }}>{error}</p>}
+        <Link to="/player" style={{
+          display: 'inline-block',
+          padding: '12px 24px',
+          background: RI.pink,
+          color: 'white',
+          fontSize: 13,
+          fontWeight: 700,
+          letterSpacing: '0.12em',
+          textTransform: 'uppercase',
+          borderRadius: 4,
+          textDecoration: 'none',
+        }}>
+          Tentar Outro Código
+        </Link>
+      </div>
+    </Shell>
   )
 }
 
@@ -195,16 +380,16 @@ function PlayerView({ preview, feedbackMap, setFeedbackMap }) {
   }
 
   async function saveFeedback(updates) {
-    const next = { ...currentFb, ...updates }
-    setFeedbackMap((m) => ({ ...m, [current.id]: next }))
+    const nextFb = { ...currentFb, ...updates }
+    setFeedbackMap((m) => ({ ...m, [current.id]: nextFb }))
     try {
       await supabase.functions.invoke('save-feedback', {
         body: {
           preview_id: preview.preview_id,
           track_id: current.id,
           session_id: sessionId,
-          vote: next.vote,
-          comment: next.comment,
+          vote: nextFb.vote,
+          comment: nextFb.comment,
         },
       })
     } catch (e) {
@@ -213,7 +398,6 @@ function PlayerView({ preview, feedbackMap, setFeedbackMap }) {
   }
 
   function vote(v) {
-    // clicar de novo no mesmo voto = remove
     saveFeedback({ vote: currentFb.vote === v ? null : v })
   }
 
@@ -223,136 +407,222 @@ function PlayerView({ preview, feedbackMap, setFeedbackMap }) {
   }
 
   return (
-    <div onContextMenu={(e) => e.preventDefault()} style={{
-      minHeight: '100vh',
-      background: 'linear-gradient(180deg, var(--ink) 0%, #050810 100%)',
-      color: 'var(--cream)',
-      padding: '40px 24px',
-    }}>
-      <div style={{ maxWidth: 760, margin: '0 auto' }}>
+    <div
+      onContextMenu={(e) => e.preventDefault()}
+      style={{
+        minHeight: '100vh',
+        background: RI.bg,
+        color: RI.textPrimary,
+        fontFamily: FONT_BODY,
+        padding: '32px 24px 64px',
+      }}>
+      <div style={{ maxWidth: 820, margin: '0 auto' }}>
         {/* Header */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 48 }}>
-          <div>
-            <div className="mono" style={{ fontSize: 10, letterSpacing: '0.3em', color: 'var(--amber)' }}>
-              RADIO · IBIZA
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'flex-start',
+          marginBottom: 40,
+          paddingBottom: 24,
+          borderBottom: `1px solid ${RI.border}`,
+          flexWrap: 'wrap',
+          gap: 16,
+        }}>
+          <Logo />
+          <div style={{ textAlign: 'right' }}>
+            <div style={{
+              display: 'inline-block',
+              padding: '4px 10px',
+              background: RI.yellow,
+              color: RI.bg,
+              fontSize: 10,
+              fontWeight: 700,
+              letterSpacing: '0.15em',
+              textTransform: 'uppercase',
+              marginBottom: 6,
+            }}>
+              CLIENTE
             </div>
-            <div className="display" style={{ fontSize: 20, marginTop: 4, opacity: 0.9 }}>
+            <div style={{
+              fontFamily: FONT_DISPLAY,
+              fontSize: 18,
+              fontWeight: 600,
+              letterSpacing: '0.04em',
+              textTransform: 'uppercase',
+            }}>
               {preview.client_name}
             </div>
-          </div>
-          <div className="mono" style={{ fontSize: 11, opacity: 0.5, textAlign: 'right' }}>
-            {daysLeft > 0 ? `${daysLeft} ${daysLeft === 1 ? 'dia' : 'dias'} restantes` : 'expira hoje'}
+            <div style={{ color: RI.textDim, fontSize: 11, marginTop: 4, letterSpacing: '0.05em' }}>
+              {daysLeft > 0 ? `${daysLeft} ${daysLeft === 1 ? 'DIA RESTANTE' : 'DIAS RESTANTES'}` : 'EXPIRA HOJE'}
+            </div>
           </div>
         </div>
 
         {/* Now Playing */}
-        <div style={{ marginBottom: 32 }}>
-          <div className="mono" style={{ fontSize: 10, letterSpacing: '0.25em', opacity: 0.5, marginBottom: 8 }}>
-            TOCANDO AGORA · {String(currentIdx + 1).padStart(2, '0')} / {String(preview.tracks.length).padStart(2, '0')}
+        <div style={{ marginBottom: 28 }}>
+          <div style={{
+            display: 'inline-block',
+            padding: '4px 10px',
+            background: RI.pink,
+            color: 'white',
+            fontSize: 10,
+            fontWeight: 700,
+            letterSpacing: '0.15em',
+            textTransform: 'uppercase',
+            marginBottom: 16,
+          }}>
+            TOCANDO · {String(currentIdx + 1).padStart(2, '0')} / {String(preview.tracks.length).padStart(2, '0')}
           </div>
-          <div className="display" style={{
-            fontSize: 'clamp(36px, 6vw, 56px)', fontWeight: 400,
-            lineHeight: 1.05, letterSpacing: '-0.02em', marginBottom: 8,
+          <div style={{
+            fontFamily: FONT_DISPLAY,
+            fontSize: 'clamp(36px, 6vw, 58px)',
+            fontWeight: 700,
+            lineHeight: 1.02,
+            letterSpacing: '0.005em',
+            textTransform: 'uppercase',
+            marginBottom: 8,
           }}>
             {current?.title}
           </div>
-          <div style={{ fontSize: 18, opacity: 0.7 }}>{current?.artist}</div>
+          <div style={{
+            fontSize: 16,
+            color: RI.textMuted,
+            letterSpacing: '0.02em',
+          }}>
+            {current?.artist}
+          </div>
         </div>
 
         {/* Progress */}
-        <div onClick={seek} style={{
-          height: 4, background: 'rgba(255,255,255,0.1)', borderRadius: 2,
-          cursor: 'pointer', marginBottom: 8, overflow: 'hidden',
-        }}>
+        <div
+          onClick={seek}
+          style={{
+            height: 3,
+            background: RI.border,
+            cursor: 'pointer',
+            marginBottom: 8,
+            overflow: 'hidden',
+          }}>
           <div style={{
             width: duration ? `${(progress / duration) * 100}%` : '0%',
-            height: '100%', background: 'var(--amber)', transition: 'width 0.1s linear',
+            height: '100%',
+            background: RI.yellow,
+            transition: 'width 0.1s linear',
           }} />
         </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, opacity: 0.5, marginBottom: 24 }} className="mono">
-          <span>{fmt(progress)}</span><span>{fmt(duration)}</span>
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          fontSize: 11,
+          color: RI.textDim,
+          letterSpacing: '0.1em',
+          marginBottom: 28,
+          fontFamily: FONT_DISPLAY,
+        }}>
+          <span>{fmt(progress)}</span>
+          <span>{fmt(duration)}</span>
         </div>
 
         {/* Controles */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 32, marginBottom: 20 }}>
-          <button onClick={prev} disabled={currentIdx === 0} style={ctrlBtn}>
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
-          </button>
-          <button onClick={togglePlay} style={{
-            ...ctrlBtn, width: 72, height: 72,
-            background: 'var(--amber)', color: 'var(--ink)', borderRadius: '50%',
-          }}>
-            {playing ? (
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor"><path d="M6 4h4v16H6zM14 4h4v16h-4z"/></svg>
-            ) : (
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor" style={{ marginLeft: 3 }}><path d="M8 5v14l11-7z"/></svg>
-            )}
-          </button>
-          <button onClick={next} disabled={currentIdx === preview.tracks.length - 1} style={ctrlBtn}>
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
-          </button>
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 24,
+          marginBottom: 28,
+        }}>
+          <CircleBtn onClick={prev} disabled={currentIdx === 0} size={48}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
+          </CircleBtn>
+          <CircleBtn onClick={togglePlay} size={76} primary>
+            {playing
+              ? <svg width="30" height="30" viewBox="0 0 24 24" fill="currentColor"><path d="M6 4h4v16H6zM14 4h4v16h-4z"/></svg>
+              : <svg width="30" height="30" viewBox="0 0 24 24" fill="currentColor" style={{ marginLeft: 4 }}><path d="M8 5v14l11-7z"/></svg>}
+          </CircleBtn>
+          <CircleBtn onClick={next} disabled={currentIdx === preview.tracks.length - 1} size={48}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
+          </CircleBtn>
         </div>
 
         {/* Voting */}
-        <div style={{ display: 'flex', justifyContent: 'center', gap: 12, marginBottom: 12 }}>
-          <button onClick={() => vote(1)} style={{
-            ...voteBtn,
-            background: currentFb.vote === 1 ? 'rgba(34,197,94,0.2)' : 'rgba(255,255,255,0.06)',
-            color: currentFb.vote === 1 ? '#4ade80' : 'var(--cream)',
-            border: `1px solid ${currentFb.vote === 1 ? '#4ade80' : 'rgba(255,255,255,0.12)'}`,
-          }}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M9 21h9c.83 0 1.54-.5 1.84-1.22l3.02-7.05c.09-.23.14-.47.14-.73v-2c0-1.1-.9-2-2-2h-6.31l.95-4.57.03-.32c0-.41-.17-.79-.44-1.06L14.17 1 7.59 7.59C7.22 7.95 7 8.45 7 9v10c0 1.1.9 2 2 2zM1 9h4v12H1z"/>
-            </svg>
-            Curti
-          </button>
-          <button onClick={() => vote(-1)} style={{
-            ...voteBtn,
-            background: currentFb.vote === -1 ? 'rgba(244,63,94,0.18)' : 'rgba(255,255,255,0.06)',
-            color: currentFb.vote === -1 ? 'var(--rose)' : 'var(--cream)',
-            border: `1px solid ${currentFb.vote === -1 ? 'var(--rose)' : 'rgba(255,255,255,0.12)'}`,
-          }}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M15 3H6c-.83 0-1.54.5-1.84 1.22l-3.02 7.05c-.09.23-.14.47-.14.73v2c0 1.1.9 2 2 2h6.31l-.95 4.57-.03.32c0 .41.17.79.44 1.06L9.83 23l6.59-6.59c.36-.36.58-.86.58-1.41V5c0-1.1-.9-2-2-2zm4 0v12h4V3h-4z"/>
-            </svg>
-            Não curti
-          </button>
-          <button onClick={() => setCommentOpen(!commentOpen)} style={{
-            ...voteBtn,
-            background: currentFb.comment ? 'rgba(34, 56, 255, 0.18)' : 'rgba(255,255,255,0.06)',
-            color: currentFb.comment ? '#9bb5ff' : 'var(--cream)',
-            border: `1px solid ${currentFb.comment ? '#6b8aff' : 'rgba(255,255,255,0.12)'}`,
-          }}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M20 2H4c-1.1 0-1.99.9-1.99 2L2 22l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/>
-            </svg>
-            {currentFb.comment ? 'Editar comentário' : 'Comentário'}
-          </button>
+        <div style={{
+          display: 'flex',
+          justifyContent: 'center',
+          gap: 10,
+          marginBottom: 12,
+          flexWrap: 'wrap',
+        }}>
+          <VoteBtn
+            active={currentFb.vote === 1}
+            activeColor="#22c55e"
+            onClick={() => vote(1)}
+            icon="♥"
+            label="Curti"
+          />
+          <VoteBtn
+            active={currentFb.vote === -1}
+            activeColor={RI.pink}
+            onClick={() => vote(-1)}
+            icon="✕"
+            label="Não curti"
+          />
+          <VoteBtn
+            active={!!currentFb.comment}
+            activeColor={RI.yellow}
+            onClick={() => setCommentOpen(!commentOpen)}
+            icon="✎"
+            label={currentFb.comment ? 'Editar comentário' : 'Comentar'}
+          />
         </div>
 
         {commentOpen && (
           <div style={{
-            background: 'rgba(255,255,255,0.04)',
-            border: '1px solid rgba(255,255,255,0.1)',
-            borderRadius: 'var(--radius-md)',
-            padding: 12, marginBottom: 24,
+            background: RI.bgCard,
+            border: `1px solid ${RI.borderStrong}`,
+            padding: 16,
+            marginBottom: 28,
           }}>
-            <textarea value={commentDraft} onChange={(e) => setCommentDraft(e.target.value)}
-              placeholder="Comentário sobre esta música..."
+            <textarea
+              value={commentDraft}
+              onChange={(e) => setCommentDraft(e.target.value)}
+              placeholder="O que achou desta música?"
               rows={3}
               style={{
-                width: '100%', background: 'transparent', color: 'var(--cream)',
-                border: 'none', outline: 'none', resize: 'vertical', fontSize: 14,
+                width: '100%',
+                background: 'transparent',
+                color: RI.textPrimary,
+                border: 'none',
+                outline: 'none',
+                resize: 'vertical',
+                fontSize: 14,
                 fontFamily: 'inherit',
-              }} />
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
-              <button className="btn btn-sm" onClick={() => setCommentOpen(false)}
-                style={{ background: 'transparent', color: 'var(--cream)', opacity: 0.7 }}>
+                lineHeight: 1.5,
+              }}
+            />
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12 }}>
+              <button onClick={() => setCommentOpen(false)} style={{
+                padding: '8px 16px',
+                background: 'transparent',
+                color: RI.textMuted,
+                border: `1px solid ${RI.borderStrong}`,
+                fontSize: 12,
+                fontWeight: 600,
+                letterSpacing: '0.1em',
+                textTransform: 'uppercase',
+                cursor: 'pointer',
+              }}>
                 Cancelar
               </button>
               <button onClick={saveComment} style={{
-                padding: '6px 14px', borderRadius: 'var(--radius-sm)',
-                background: 'var(--amber)', color: 'var(--ink)', fontSize: 13, fontWeight: 500,
+                padding: '8px 16px',
+                background: RI.yellow,
+                color: RI.bg,
+                border: 'none',
+                fontSize: 12,
+                fontWeight: 700,
+                letterSpacing: '0.1em',
+                textTransform: 'uppercase',
+                cursor: 'pointer',
               }}>
                 Salvar
               </button>
@@ -360,46 +630,93 @@ function PlayerView({ preview, feedbackMap, setFeedbackMap }) {
           </div>
         )}
 
-        <audio ref={audioRef} src={current?.url}
-          onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)}
+        <audio
+          ref={audioRef}
+          src={current?.url}
+          onPlay={() => setPlaying(true)}
+          onPause={() => setPlaying(false)}
           onEnded={() => { if (currentIdx < preview.tracks.length - 1) next(); else setPlaying(false) }}
-          onTimeUpdate={onTimeUpdate} onLoadedMetadata={onTimeUpdate}
+          onTimeUpdate={onTimeUpdate}
+          onLoadedMetadata={onTimeUpdate}
           controlsList="nodownload noplaybackrate"
-          onContextMenu={(e) => e.preventDefault()} />
+          onContextMenu={(e) => e.preventDefault()}
+        />
 
         {/* Tracklist */}
-        <div style={{ marginTop: 32 }}>
-          <div className="mono" style={{ fontSize: 10, letterSpacing: '0.25em', opacity: 0.5, marginBottom: 12 }}>
-            FAIXAS
+        <div style={{ marginTop: 36 }}>
+          <div style={{
+            fontFamily: FONT_DISPLAY,
+            fontSize: 11,
+            fontWeight: 700,
+            letterSpacing: '0.25em',
+            color: RI.textDim,
+            marginBottom: 14,
+            textTransform: 'uppercase',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+          }}>
+            <span style={{
+              display: 'inline-block',
+              width: 16, height: 2, background: RI.yellow,
+            }} />
+            FAIXAS DO PREVIEW
           </div>
           <div style={{
-            background: 'rgba(255,255,255,0.03)',
-            border: '1px solid rgba(255,255,255,0.08)',
-            borderRadius: 'var(--radius-lg)', overflow: 'hidden',
+            background: RI.bgSoft,
+            border: `1px solid ${RI.border}`,
+            overflow: 'hidden',
           }}>
             {preview.tracks.map((t, i) => {
               const active = i === currentIdx
               const fb = feedbackMap[t.id] || {}
               return (
-                <button key={t.id} onClick={() => selectTrack(i)} style={{
-                  display: 'flex', alignItems: 'center', gap: 14,
-                  width: '100%', padding: '14px 18px', textAlign: 'left',
-                  background: active ? 'rgba(255, 154, 60, 0.12)' : 'transparent',
-                  borderBottom: i < preview.tracks.length - 1 ? '1px solid rgba(255,255,255,0.05)' : 'none',
-                  color: 'var(--cream)',
-                }}>
-                  <span className="mono" style={{
-                    fontSize: 12, opacity: active ? 1 : 0.4,
-                    color: active ? 'var(--amber)' : 'inherit', width: 28,
-                  }}>{String(i + 1).padStart(2, '0')}</span>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 15, fontWeight: active ? 500 : 400 }}>{t.title}</div>
-                    <div style={{ fontSize: 13, opacity: 0.5 }}>{t.artist}</div>
+                <button
+                  key={t.id}
+                  onClick={() => selectTrack(i)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 14,
+                    width: '100%',
+                    padding: '16px 18px',
+                    textAlign: 'left',
+                    background: active ? 'rgba(255, 46, 138, 0.08)' : 'transparent',
+                    borderBottom: i < preview.tracks.length - 1 ? `1px solid ${RI.border}` : 'none',
+                    borderLeft: `3px solid ${active ? RI.pink : 'transparent'}`,
+                    color: RI.textPrimary,
+                    cursor: 'pointer',
+                    transition: 'background 0.15s',
+                    fontFamily: 'inherit',
+                  }}>
+                  <span style={{
+                    fontFamily: FONT_DISPLAY,
+                    fontSize: 14,
+                    fontWeight: 600,
+                    color: active ? RI.yellow : RI.textDim,
+                    width: 28,
+                    letterSpacing: '0.05em',
+                  }}>
+                    {String(i + 1).padStart(2, '0')}
+                  </span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{
+                      fontSize: 15,
+                      fontWeight: active ? 600 : 500,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}>
+                      {t.title}
+                    </div>
+                    <div style={{ fontSize: 13, color: RI.textMuted, marginTop: 2 }}>
+                      {t.artist}
+                    </div>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
-                    {fb.vote === 1 && <span style={{ color: '#4ade80' }}>♥</span>}
-                    {fb.vote === -1 && <span style={{ color: 'var(--rose)' }}>✕</span>}
-                    {fb.comment && <span style={{ color: '#9bb5ff' }}>✎</span>}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, flexShrink: 0 }}>
+                    {fb.vote === 1 && <span style={{ color: '#22c55e' }}>♥</span>}
+                    {fb.vote === -1 && <span style={{ color: RI.pink }}>✕</span>}
+                    {fb.comment && <span style={{ color: RI.yellow }}>✎</span>}
                     {active && playing && (
                       <div style={{ display: 'flex', gap: 2, alignItems: 'flex-end', height: 14, marginLeft: 4 }}>
                         <Bar delay={0} /><Bar delay={0.15} /><Bar delay={0.3} />
@@ -412,36 +729,95 @@ function PlayerView({ preview, feedbackMap, setFeedbackMap }) {
           </div>
         </div>
 
-        <div style={{ marginTop: 40, textAlign: 'center', fontSize: 11, opacity: 0.3 }} className="mono">
-          PREVIEW EXPIRA EM {expiresAt.toLocaleDateString('pt-BR')}
+        {/* Footer */}
+        <div style={{
+          marginTop: 40,
+          paddingTop: 24,
+          borderTop: `1px solid ${RI.border}`,
+          textAlign: 'center',
+          fontSize: 10,
+          letterSpacing: '0.2em',
+          color: RI.textDim,
+          textTransform: 'uppercase',
+          fontFamily: FONT_DISPLAY,
+        }}>
+          Radio Ibiza · Identidade Musical · Preview expira em {expiresAt.toLocaleDateString('pt-BR')}
         </div>
       </div>
 
-      <style>{`@keyframes bar { 0%, 100% { height: 4px } 50% { height: 14px } }`}</style>
+      <style>{`
+        @keyframes bar { 0%, 100% { height: 4px } 50% { height: 14px } }
+      `}</style>
     </div>
   )
 }
 
-const ctrlBtn = {
-  display: 'grid', placeItems: 'center',
-  width: 44, height: 44,
-  background: 'rgba(255,255,255,0.08)',
-  color: 'var(--cream)',
-  borderRadius: '50%',
-  transition: 'background 0.15s, transform 0.08s',
+function CircleBtn({ onClick, disabled, children, size = 48, primary }) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        display: 'grid',
+        placeItems: 'center',
+        width: size,
+        height: size,
+        background: primary ? RI.pink : RI.bgCard,
+        color: 'white',
+        border: primary ? 'none' : `1px solid ${RI.borderStrong}`,
+        borderRadius: '50%',
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        opacity: disabled ? 0.3 : 1,
+        transition: 'transform 0.08s, background 0.15s',
+        fontFamily: 'inherit',
+      }}
+      onMouseEnter={(e) => {
+        if (disabled) return
+        if (primary) e.currentTarget.style.background = RI.pinkDeep
+        else e.currentTarget.style.background = RI.bgSoft
+      }}
+      onMouseLeave={(e) => {
+        if (primary) e.currentTarget.style.background = RI.pink
+        else e.currentTarget.style.background = RI.bgCard
+      }}
+    >
+      {children}
+    </button>
+  )
 }
 
-const voteBtn = {
-  display: 'inline-flex', alignItems: 'center', gap: 6,
-  padding: '8px 14px', borderRadius: 999,
-  fontSize: 13, fontWeight: 500,
-  transition: 'all 0.15s',
+function VoteBtn({ active, activeColor, onClick, icon, label }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 8,
+        padding: '10px 16px',
+        background: active ? activeColor : RI.bgCard,
+        color: active ? RI.bg : RI.textPrimary,
+        border: `1px solid ${active ? activeColor : RI.borderStrong}`,
+        fontSize: 12,
+        fontWeight: 700,
+        letterSpacing: '0.1em',
+        textTransform: 'uppercase',
+        cursor: 'pointer',
+        transition: 'all 0.15s',
+        fontFamily: 'inherit',
+      }}
+    >
+      <span style={{ fontSize: 14 }}>{icon}</span>
+      {label}
+    </button>
+  )
 }
 
 function Bar({ delay }) {
   return <span style={{
-    width: 3, background: 'var(--amber)',
-    animation: `bar 0.9s ease-in-out infinite`,
+    width: 3,
+    background: RI.yellow,
+    animation: 'bar 0.9s ease-in-out infinite',
     animationDelay: `${delay}s`,
   }} />
 }
