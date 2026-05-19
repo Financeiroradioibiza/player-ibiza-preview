@@ -301,12 +301,53 @@ export default function PreviewEditor() {
         </div>
       </div>
 
-      {/* Seção: Upload manual de MP3s */}
+      {/* Seção: Adicionar músicas (upload manual OU baixar do Spotify) */}
       <div className="card" style={{ marginBottom: 20 }}>
         <h3 style={{ fontSize: 14, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--muted)', marginBottom: 12 }}>
           2. Adicionar músicas
         </h3>
-        <UploadForm previewId={id} onUploaded={load} />
+
+        {!isJobActive && (
+          <>
+            {/* Baixar do Spotify */}
+            <div style={{ marginBottom: 16 }}>
+              <label className="muted" style={{ fontSize: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: 8 }}>
+                Baixar do Spotify
+              </label>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <input
+                  className="input"
+                  placeholder="https://open.spotify.com/playlist/..."
+                  value={playlistUrl}
+                  onChange={(e) => setPlaylistUrl(e.target.value)}
+                  style={{ flex: 1 }}
+                />
+                <button className="btn btn-accent" onClick={startDownload} disabled={submitting || !playlistUrl}>
+                  {submitting ? 'Enviando…' : 'Baixar playlist'}
+                </button>
+              </div>
+              {error && <div style={{ color: 'var(--rose)', marginTop: 8, fontSize: 13 }}>{error}</div>}
+            </div>
+
+            {/* Divider */}
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 12,
+              margin: '16px 0',
+            }}>
+              <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+              <span className="muted" style={{ fontSize: 11, letterSpacing: '0.1em' }}>OU</span>
+              <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+            </div>
+
+            {/* Upload manual */}
+            <div>
+              <label className="muted" style={{ fontSize: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: 8 }}>
+                Subir MP3 do computador
+              </label>
+              <UploadForm previewId={id} onUploaded={load} />
+            </div>
+          </>
+        )}
       </div>
 
       {/* Seção: Progresso do download em andamento (caso ainda haja um) */}
