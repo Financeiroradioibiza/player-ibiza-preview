@@ -169,22 +169,18 @@ def search_youtube_id(title: str, artist: str) -> str | None:
     return None
 
 
-def download_track(title: str, artist: str, out_dir: Path) -> tuple[Path, int]:
+def get_mp3_link(title: str, artist: str) -> tuple[str, int]:
     """
-    Baixa o MP3 da música usando:
-    1. Busca o ID do vídeo no YouTube (via scraping)
-    2. Chama a API RapidAPI pra converter o vídeo em link MP3
-    3. Baixa o MP3 e salva localmente
+    Obtém o link MP3 e duração de uma música via RapidAPI.
+    NÃO baixa — apenas retorna o link pra o navegador do usuário baixar.
     """
     if not RAPIDAPI_KEY:
         raise RuntimeError("RAPIDAPI_KEY não configurada nas variáveis do Railway")
 
-    # 1. Buscar ID do vídeo no YouTube
     video_id = search_youtube_id(title, artist)
     if not video_id:
         raise RuntimeError(f"Vídeo não encontrado no YouTube para: {artist} - {title}")
 
-    # 2. Chamar a API pra converter
     api_url = f"https://{RAPIDAPI_HOST}/dl"
     headers = {
         "x-rapidapi-host": RAPIDAPI_HOST,
@@ -192,7 +188,6 @@ def download_track(title: str, artist: str, out_dir: Path) -> tuple[Path, int]:
     }
     params = {"id": video_id}
 
-    # A API às vezes precisa de tempo pra processar — tenta até 4 vezes
     last_response = None
     for attempt in range(4):
         try:
@@ -200,10 +195,9 @@ def download_track(title: str, artist: str, out_dir: Path) -> tuple[Path, int]:
             r.raise_for_status()
             data = r.json()
             last_response = data
-
             status = data.get("status", "").lower()
             if status == "ok" and data.get("link"):
-                break
+                return data["link"], int(data.get("duration") or 0)
             elif status == "processing":
                 log.info("  API processando, aguardando... (tentativa %d/4)", attempt + 1)
                 time.sleep(5)
@@ -211,54 +205,11 @@ def download_track(title: str, artist: str, out_dir: Path) -> tuple[Path, int]:
             elif status == "fail":
                 raise RuntimeError(f"API falhou: {data.get('msg', 'sem mensagem')}")
             else:
-                log.warning("Status desconhecido: %s, response: %s", status, data)
                 time.sleep(3)
         except requests.HTTPError as e:
             raise RuntimeError(f"Erro HTTP na API: {e}")
-        except Exception as e:
-            log.warning("Tentativa %d falhou: %s", attempt + 1, e)
-            time.sleep(3)
-    else:
-        raise RuntimeError(f"API não retornou link após 4 tentativas. Última resposta: {last_response}")
 
-    mp3_link = data["link"]
-    duration = int(data.get("duration") or 0)
-
-    log.info("  Link recebido: %s", mp3_link[:120])
-
-    # 3. Baixa o MP3 do link
-    # Importante: servidores como 123tokyo.xyz bloqueiam User-Agents não-browser.
-    # Precisamos parecer um navegador real.
-    out_path = out_dir / f"{uuid.uuid4()}.mp3"
-    download_headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/124.0 Safari/537.36"
-        ),
-        "Accept": "*/*",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Referer": "https://youtube-mp3.org/",
-        "Sec-Fetch-Mode": "cors",
-        "Sec-Fetch-Site": "cross-site",
-    }
-    log.info("  Baixando MP3 (%s bytes)...", data.get("filesize", "?"))
-    try:
-        with requests.get(mp3_link, headers=download_headers, stream=True, timeout=120) as r:
-            r.raise_for_status()
-            with open(out_path, "wb") as f:
-                for chunk in r.iter_content(chunk_size=8192):
-                    if chunk:
-                        f.write(chunk)
-    except requests.HTTPError as e:
-        # Se 404, mostra o link completo no log pra debug
-        log.error("  Erro %s baixando MP3. Link completo: %s", e.response.status_code, mp3_link)
-        raise
-
-    if out_path.stat().st_size < 1000:
-        raise RuntimeError("Arquivo baixado muito pequeno, provavelmente erro")
-
-    return out_path, duration
+    raise RuntimeError(f"API não retornou link após 4 tentativas. Última resposta: {last_response}")
 
 
 # ============================================================
@@ -313,46 +264,30 @@ def process_job(job: dict):
     update_job(job_id, total_tracks=len(items))
 
     completed = 0
-    with tempfile.TemporaryDirectory() as tmp:
-        tmp_path = Path(tmp)
-        for item in items:
-            try:
-                update_item(item["id"], status="downloading")
-                log.info(f"  ↓ {item['title']} — {item['artist']}")
+    for item in items:
+        try:
+            update_item(item["id"], status="processing")
+            log.info(f"  → {item['title']} — {item['artist']}")
 
-                local_path, duration = download_track(
-                    item["title"], item["artist"] or "", tmp_path
-                )
+            # Apenas obtém o link MP3, NÃO baixa
+            mp3_link, duration = get_mp3_link(
+                item["title"], item["artist"] or ""
+            )
 
-                ext = local_path.suffix.lstrip(".")
-                remote_name = f"{uuid.uuid4()}.{ext}"
-                upload_to_storage(local_path, remote_name)
-                local_path.unlink(missing_ok=True)
-
-                track_res = sb.table("tracks").insert({
-                    "preview_id": job.get("preview_id"),
-                    "title": item["title"],
-                    "artist": item["artist"] or "Desconhecido",
-                    "storage_path": remote_name,
-                    "duration_seconds": duration or None,
-                    "status": "pending_review",
-                    "source": "spotify",
-                    "source_ref": item["spotify_url"],
-                    "created_by": job.get("created_by"),
-                }).execute()
-                track_id = track_res.data[0]["id"]
-
-                update_item(item["id"], status="done",
-                            track_id=track_id, error_message=None)
-                completed += 1
-                update_job(job_id, completed_tracks=completed)
-            except Exception as e:
-                log.exception(f"  ✗ falha em {item['title']}")
-                update_item(item["id"], status="failed",
-                            error_message=str(e)[:300])
+            update_item(item["id"],
+                        status="ready",
+                        mp3_url=mp3_link,
+                        duration_seconds=duration,
+                        error_message=None)
+            completed += 1
+            update_job(job_id, completed_tracks=completed)
+        except Exception as e:
+            log.exception(f"  ✗ falha em {item['title']}")
+            update_item(item["id"], status="failed",
+                        error_message=str(e)[:300])
 
     update_job(job_id, status="done", finished_at="now()")
-    log.info(f"Job {job_id} concluído: {completed}/{len(items)} faixas")
+    log.info(f"Job {job_id} concluído: {completed}/{len(items)} links obtidos")
 
 
 # ============================================================
