@@ -40,18 +40,19 @@ export default function PreviewDetail() {
     setLoading(false)
   }
 
+  // Se for rascunho e meu, redireciona pro editor (precisa estar antes de qualquer return)
+  useEffect(() => {
+    if (!preview || !currentUserId) return
+    if (preview.status === 'draft' && preview.created_by === currentUserId) {
+      navigate(`/admin/previews/${id}/edit`, { replace: true })
+    }
+  }, [preview, currentUserId, id, navigate])
+
   if (loading) return <div className="muted">Carregando…</div>
   if (!preview) return <div className="muted">Preview não encontrado.</div>
 
   const isMine = currentUserId === preview.created_by
   const isDraft = preview.status === 'draft'
-
-  // Se for rascunho e meu, redireciona pro editor
-  useEffect(() => {
-    if (isDraft && isMine) {
-      navigate(`/admin/previews/${id}/edit`, { replace: true })
-    }
-  }, [isDraft, isMine])
 
   if (isDraft) {
     return (
