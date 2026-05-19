@@ -32,7 +32,6 @@ from pathlib import Path
 
 import requests
 from supabase import create_client, Client
-import yt_dlp
 
 logging.basicConfig(
     level=logging.INFO,
@@ -47,15 +46,8 @@ YOUTUBE_COOKIES = os.environ.get("YOUTUBE_COOKIES", "").strip()
 
 sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# Salva cookies do YouTube em arquivo (se a env var estiver definida)
+# Cookies não são mais usados (usamos API RapidAPI), mas a env var pode existir.
 COOKIES_PATH = None
-if YOUTUBE_COOKIES:
-    COOKIES_PATH = "/tmp/yt_cookies.txt"
-    with open(COOKIES_PATH, "w") as f:
-        f.write(YOUTUBE_COOKIES)
-    log.info("Cookies do YouTube carregados.")
-else:
-    log.warning("YOUTUBE_COOKIES não definido. YouTube pode bloquear o download.")
 
 
 # ============================================================
@@ -142,61 +134,123 @@ scraper = SpotifyEmbedScraper()
 
 
 # ============================================================
-# yt-dlp — busca e baixa o áudio do YouTube
+# Download via RapidAPI (YouTube MP3 — youtube-mp36.p.rapidapi.com)
 # ============================================================
-def download_track(title: str, artist: str, out_dir: Path) -> tuple[Path, int]:
-    query = f"ytsearch1:{title} {artist} audio"
-    out_template = str(out_dir / f"{uuid.uuid4()}.%(ext)s")
-    opts = {
-        # SABR streaming do YouTube quebrou formatos só-áudio. Aceitamos
-        # qualquer coisa (vídeo+áudio combinado é o que sobra) e o ffmpeg
-        # extrai só o áudio no postprocessor.
-        "format": "bestaudio/best",
-        "outtmpl": out_template,
-        "quiet": True,
-        "no_warnings": True,
-        "noplaylist": True,
-        "postprocessors": [{
-            "key": "FFmpegExtractAudio",
-            "preferredcodec": "m4a",
-            "preferredquality": "192",
-        }],
-        "default_search": "ytsearch",
-        "http_headers": {
-            "User-Agent": (
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/124.0 Safari/537.36"
-            ),
-        },
-        # tv client é o único que ainda lista formatos não-SABR
-        "extractor_args": {
-            "youtube": {"player_client": ["tv"]},
-        },
-    }
-    if COOKIES_PATH:
-        opts["cookiefile"] = COOKIES_PATH
 
-    with yt_dlp.YoutubeDL(opts) as ydl:
-        info = ydl.extract_info(query, download=True)
-        if "entries" in info:
-            info = info["entries"][0]
-        duration = int(info.get("duration") or 0)
-        files = list(out_dir.glob("*.m4a"))
-        if not files:
-            raise RuntimeError("Arquivo de áudio não foi gerado")
-        return files[-1], duration
+RAPIDAPI_KEY = os.environ.get("RAPIDAPI_KEY", "").strip()
+RAPIDAPI_HOST = "youtube-mp36.p.rapidapi.com"
+
+
+def search_youtube_id(title: str, artist: str) -> str | None:
+    """
+    Busca o primeiro resultado no YouTube via scraping (sem precisar de API).
+    Retorna o ID do vídeo (11 caracteres) ou None.
+    """
+    query = f"{artist} {title} audio".strip()
+    encoded = requests.utils.quote(query)
+    url = f"https://www.youtube.com/results?search_query={encoded}"
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/124.0 Safari/537.36"
+        ),
+        "Accept-Language": "en-US,en;q=0.9",
+    }
+    try:
+        r = requests.get(url, headers=headers, timeout=20)
+        r.raise_for_status()
+        # Os IDs aparecem no formato "videoId":"XXXXXXXXXXX" no HTML
+        matches = re.findall(r'"videoId":"([a-zA-Z0-9_-]{11})"', r.text)
+        if matches:
+            return matches[0]
+    except Exception as e:
+        log.warning("Falha buscando no YouTube: %s", e)
+    return None
+
+
+def download_track(title: str, artist: str, out_dir: Path) -> tuple[Path, int]:
+    """
+    Baixa o MP3 da música usando:
+    1. Busca o ID do vídeo no YouTube (via scraping)
+    2. Chama a API RapidAPI pra converter o vídeo em link MP3
+    3. Baixa o MP3 e salva localmente
+    """
+    if not RAPIDAPI_KEY:
+        raise RuntimeError("RAPIDAPI_KEY não configurada nas variáveis do Railway")
+
+    # 1. Buscar ID do vídeo no YouTube
+    video_id = search_youtube_id(title, artist)
+    if not video_id:
+        raise RuntimeError(f"Vídeo não encontrado no YouTube para: {artist} - {title}")
+
+    # 2. Chamar a API pra converter
+    api_url = f"https://{RAPIDAPI_HOST}/dl"
+    headers = {
+        "x-rapidapi-host": RAPIDAPI_HOST,
+        "x-rapidapi-key": RAPIDAPI_KEY,
+    }
+    params = {"id": video_id}
+
+    # A API às vezes precisa de tempo pra processar — tenta até 4 vezes
+    last_response = None
+    for attempt in range(4):
+        try:
+            r = requests.get(api_url, headers=headers, params=params, timeout=30)
+            r.raise_for_status()
+            data = r.json()
+            last_response = data
+
+            status = data.get("status", "").lower()
+            if status == "ok" and data.get("link"):
+                break
+            elif status == "processing":
+                log.info("  API processando, aguardando... (tentativa %d/4)", attempt + 1)
+                time.sleep(5)
+                continue
+            elif status == "fail":
+                raise RuntimeError(f"API falhou: {data.get('msg', 'sem mensagem')}")
+            else:
+                log.warning("Status desconhecido: %s, response: %s", status, data)
+                time.sleep(3)
+        except requests.HTTPError as e:
+            raise RuntimeError(f"Erro HTTP na API: {e}")
+        except Exception as e:
+            log.warning("Tentativa %d falhou: %s", attempt + 1, e)
+            time.sleep(3)
+    else:
+        raise RuntimeError(f"API não retornou link após 4 tentativas. Última resposta: {last_response}")
+
+    mp3_link = data["link"]
+    duration = int(data.get("duration") or 0)
+
+    # 3. Baixa o MP3 do link
+    out_path = out_dir / f"{uuid.uuid4()}.mp3"
+    log.info("  Baixando MP3 (%s bytes)...", data.get("filesize", "?"))
+    with requests.get(mp3_link, stream=True, timeout=120) as r:
+        r.raise_for_status()
+        with open(out_path, "wb") as f:
+            for chunk in r.iter_content(chunk_size=8192):
+                if chunk:
+                    f.write(chunk)
+
+    if out_path.stat().st_size < 1000:
+        raise RuntimeError("Arquivo baixado muito pequeno, provavelmente erro")
+
+    return out_path, duration
 
 
 # ============================================================
 # Supabase helpers
 # ============================================================
 def upload_to_storage(local_path: Path, remote_name: str) -> str:
+    # Detecta content-type pela extensão
+    content_type = "audio/mpeg" if local_path.suffix.lower() == ".mp3" else "audio/mp4"
     with open(local_path, "rb") as f:
         sb.storage.from_("tracks").upload(
             path=remote_name,
             file=f,
-            file_options={"content-type": "audio/mp4", "upsert": "false"},
+            file_options={"content-type": content_type, "upsert": "false"},
         )
     return remote_name
 
@@ -284,7 +338,11 @@ def process_job(job: dict):
 # Loop principal
 # ============================================================
 def main_loop():
-    log.info(f"Worker iniciado (v2 — embed scraping). Polling a cada {POLL}s.")
+    log.info(f"Worker iniciado (v3 — RapidAPI). Polling a cada {POLL}s.")
+    if RAPIDAPI_KEY:
+        log.info("RAPIDAPI_KEY configurada (ok).")
+    else:
+        log.error("RAPIDAPI_KEY NÃO está configurada! Configure no Railway.")
     while True:
         try:
             res = sb.table("download_jobs") \
