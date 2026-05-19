@@ -282,6 +282,42 @@ export default function PreviewEditor() {
         <button className="btn btn-danger" onClick={deleteDraft}>Excluir rascunho</button>
       </div>
 
+      {/* PAINEL DE DEBUG — remover depois */}
+      <details style={{
+        background: '#fff8e1', border: '1px solid #ffc107',
+        borderRadius: 4, padding: 10, marginBottom: 16, fontSize: 11,
+        fontFamily: 'monospace',
+      }}>
+        <summary style={{ cursor: 'pointer', fontWeight: 600 }}>🐞 Debug — clique para abrir</summary>
+        <pre style={{ marginTop: 8, whiteSpace: 'pre-wrap', wordBreak: 'break-all', maxHeight: 400, overflow: 'auto' }}>
+{`preview.status: ${preview?.status}
+preview.client_name: ${preview?.client_name}
+
+tracks.length: ${tracks.length}
+tracks: ${JSON.stringify(tracks.map(t => ({ id: t.id?.slice(0,8), title: t.title, status: t.status })), null, 2)}
+
+job: ${job ? JSON.stringify({
+  id: job.id?.slice(0,8),
+  status: job.status,
+  total: job.total_tracks,
+  completed: job.completed_tracks,
+  error: job.error_message,
+}, null, 2) : 'null (nenhum job)'}
+
+jobItems.length: ${jobItems.length}
+jobItems: ${JSON.stringify(jobItems.map(i => ({
+  title: i.title,
+  status: i.status,
+  mp3_url: i.mp3_url ? i.mp3_url.slice(0, 80) + '...' : null,
+  error: i.error_message,
+})), null, 2)}
+
+isJobActive: ${isJobActive}
+approvedCount: ${approvedCount}
+pendingCount: ${pendingCount}`}
+        </pre>
+      </details>
+
       {/* Seção: Configuração */}
       <div className="card" style={{ marginBottom: 20 }}>
         <h3 style={{ fontSize: 14, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--muted)', marginBottom: 12 }}>
@@ -350,41 +386,22 @@ export default function PreviewEditor() {
         )}
       </div>
 
-      {/* Seção: Progresso do download em andamento (caso ainda haja um) */}
-      {isJobActive && (
-        <div className="card" style={{ marginBottom: 20, background: 'rgba(34, 56, 255, 0.04)' }}>
-          <h3 style={{ fontSize: 14, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--cobalt)', marginBottom: 12 }}>
-            Baixando playlist… {job.completed_tracks}/{job.total_tracks || '—'}
+      {/* Seção: Job ativo (obtendo links) ou pronto (lista pra baixar) */}
+      {job && job.status !== 'failed' && (
+        <SpotifyJobPanel
+          job={job}
+          jobItems={jobItems}
+          previewId={id}
+          onUploaded={load}
+        />
+      )}
+
+      {job && job.status === 'failed' && (
+        <div className="card" style={{ marginBottom: 20, background: 'rgba(220, 38, 38, 0.05)' }}>
+          <h3 style={{ fontSize: 14, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--rose)', marginBottom: 8 }}>
+            Falha ao processar playlist
           </h3>
-          {jobItems.length === 0 ? (
-            <p className="muted" style={{ fontSize: 13 }}>Aguardando worker iniciar…</p>
-          ) : (
-            <div style={{ display: 'grid', gap: 4, maxHeight: 280, overflowY: 'auto' }}>
-              {jobItems.map((i) => (
-                <div key={i.id} style={{
-                  display: 'flex', alignItems: 'center', gap: 12,
-                  padding: '6px 10px', background: 'white', borderRadius: 'var(--radius-sm)',
-                  fontSize: 13,
-                }}>
-                  <span style={{ width: 18, textAlign: 'center' }}>
-                    {i.status === 'done' && '✓'}
-                    {i.status === 'failed' && '✗'}
-                    {i.status === 'downloading' && '⏳'}
-                    {i.status === 'pending' && '·'}
-                  </span>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {i.title}
-                    </div>
-                    <div className="muted" style={{ fontSize: 11 }}>
-                      {i.artist}
-                      {i.error_message && <span style={{ color: 'var(--rose)' }}> — {i.error_message}</span>}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+          <p style={{ fontSize: 13 }}>{job.error_message}</p>
         </div>
       )}
 
@@ -855,6 +872,123 @@ function UploadForm({ previewId, onUploaded }) {
       )}
 
       {error && <div style={{ color: 'var(--rose)', marginTop: 10, fontSize: 14 }}>{error}</div>}
+    </div>
+  )
+}
+
+// ============================================================
+// Painel do job do Spotify — mostra lista pra baixar no browser
+// ============================================================
+function SpotifyJobPanel({ job, jobItems, previewId, onUploaded }) {
+  const isProcessing = job.status === 'queued' || job.status === 'processing'
+  const isDone = job.status === 'done'
+
+  const ready = jobItems.filter(i => i.status === 'ready' && i.mp3_url)
+  const failed = jobItems.filter(i => i.status === 'failed')
+  const stillProcessing = jobItems.filter(i => i.status === 'pending' || i.status === 'processing')
+
+  async function downloadAll() {
+    // Inicia download de cada arquivo com pequeno intervalo (evita estourar conexões)
+    for (let i = 0; i < ready.length; i++) {
+      downloadOne(ready[i])
+      await new Promise(r => setTimeout(r, 400))
+    }
+  }
+
+  function downloadOne(item) {
+    // Cria um link invisível e clica nele
+    const a = document.createElement('a')
+    a.href = item.mp3_url
+    // Nome do arquivo no formato "Artista - Música.mp3"
+    const safeName = `${item.artist || 'Desconhecido'} - ${item.title}`
+      .replace(/[<>:"/\\|?*]/g, '')
+      .slice(0, 200)
+    a.download = `${safeName}.mp3`
+    a.target = '_blank'
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+  }
+
+  return (
+    <div className="card" style={{ marginBottom: 20, background: isProcessing ? 'rgba(34, 56, 255, 0.04)' : undefined }}>
+      <h3 style={{ fontSize: 14, textTransform: 'uppercase', letterSpacing: '0.08em', color: isProcessing ? 'var(--cobalt)' : 'var(--muted)', marginBottom: 12 }}>
+        {isProcessing
+          ? `Obtendo links… ${job.completed_tracks}/${job.total_tracks || '—'}`
+          : `Playlist pronta — ${ready.length} música${ready.length !== 1 ? 's' : ''} para baixar`}
+      </h3>
+
+      {isProcessing && jobItems.length === 0 && (
+        <p className="muted" style={{ fontSize: 13 }}>Aguardando worker iniciar… (10 a 30 segundos)</p>
+      )}
+
+      {/* Instruções quando estiver pronto */}
+      {isDone && ready.length > 0 && (
+        <div style={{
+          padding: 12, marginBottom: 14,
+          background: 'rgba(255, 154, 60, 0.1)', border: '1px solid var(--amber-deep)',
+          borderRadius: 'var(--radius-sm)', fontSize: 13, lineHeight: 1.5,
+        }}>
+          <strong>Como funciona:</strong>
+          <ol style={{ margin: '6px 0 0 20px', padding: 0 }}>
+            <li>Clica em <strong>Baixar todas</strong> (ou nas músicas individualmente)</li>
+            <li>Os MP3 vão pra pasta de Downloads do seu computador</li>
+            <li>Depois, na seção "Adicionar músicas" acima, arrasta os MP3s pra área de upload</li>
+          </ol>
+        </div>
+      )}
+
+      {/* Botão principal */}
+      {isDone && ready.length > 0 && (
+        <button className="btn btn-accent" onClick={downloadAll} style={{ marginBottom: 14 }}>
+          ⬇ Baixar todas ({ready.length})
+        </button>
+      )}
+
+      {/* Lista de músicas */}
+      {jobItems.length > 0 && (
+        <div style={{ display: 'grid', gap: 4, maxHeight: 320, overflowY: 'auto' }}>
+          {jobItems.map((i) => (
+            <div key={i.id} style={{
+              display: 'flex', alignItems: 'center', gap: 12,
+              padding: '8px 10px', background: 'white', borderRadius: 'var(--radius-sm)',
+              fontSize: 13,
+            }}>
+              <span style={{ width: 18, textAlign: 'center', flexShrink: 0 }}>
+                {i.status === 'ready' && '✓'}
+                {i.status === 'failed' && '✗'}
+                {i.status === 'processing' && '⏳'}
+                {i.status === 'pending' && '·'}
+              </span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {i.title}
+                </div>
+                <div className="muted" style={{ fontSize: 11 }}>
+                  {i.artist}
+                  {i.error_message && <span style={{ color: 'var(--rose)' }}> — {i.error_message}</span>}
+                </div>
+              </div>
+              {i.status === 'ready' && i.mp3_url && (
+                <button
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => downloadOne(i)}
+                  style={{ fontSize: 11, padding: '4px 10px', flexShrink: 0 }}
+                >
+                  ⬇ Baixar
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Resumo final */}
+      {isDone && failed.length > 0 && (
+        <p className="muted" style={{ fontSize: 12, marginTop: 12 }}>
+          {failed.length} {failed.length === 1 ? 'música não foi encontrada' : 'músicas não foram encontradas'} no YouTube.
+        </p>
+      )}
     </div>
   )
 }
