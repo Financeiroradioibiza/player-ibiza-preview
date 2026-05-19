@@ -5,8 +5,6 @@ import { supabase } from '../lib/supabase.js'
 import PreviewsList from './admin/PreviewsList.jsx'
 import PreviewEditor from './admin/PreviewEditor.jsx'
 import PreviewDetail from './admin/PreviewDetail.jsx'
-import TracksLibrary from './admin/TracksLibrary.jsx'
-import Downloads from './admin/Downloads.jsx'
 
 export default function AdminApp() {
   const navigate = useNavigate()
@@ -41,17 +39,14 @@ export default function AdminApp() {
         background: 'white',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 28 }}>
-          <div className="display" style={{ fontSize: 22, letterSpacing: '-0.01em' }}>
+          <NavLink to="/admin" className="display" style={{
+            fontSize: 22, letterSpacing: '-0.01em', textDecoration: 'none', color: 'inherit',
+          }}>
             Radio Ibiza <span className="mono" style={{
               fontSize: 10, color: 'var(--cobalt)', verticalAlign: 'middle',
               marginLeft: 6, letterSpacing: '0.2em',
             }}>ADMIN</span>
-          </div>
-          <nav style={{ display: 'flex', gap: 4 }}>
-            <NavTab to="/admin">Previews</NavTab>
-            <NavTab to="/admin/tracks">Acervo</NavTab>
-            <NavTab to="/admin/downloads">Downloads</NavTab>
-          </nav>
+          </NavLink>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
           <span className="mono" style={{ fontSize: 12, color: 'var(--muted)' }}>
@@ -65,27 +60,10 @@ export default function AdminApp() {
         <Routes>
           <Route index element={<PreviewsList />} />
           <Route path="previews/new" element={<PreviewEditor />} />
-          <Route path="previews/:id" element={<PreviewDetail />} />
           <Route path="previews/:id/edit" element={<PreviewEditor />} />
-          <Route path="tracks" element={<TracksLibrary />} />
-          <Route path="downloads" element={<Downloads />} />
+          <Route path="previews/:id" element={<PreviewDetail />} />
         </Routes>
       </main>
     </div>
-  )
-}
-
-function NavTab({ to, children }) {
-  return (
-    <NavLink to={to} end style={({ isActive }) => ({
-      padding: '8px 14px',
-      borderRadius: 'var(--radius-md)',
-      fontSize: 14,
-      fontWeight: 500,
-      color: isActive ? 'var(--cobalt)' : 'var(--ink)',
-      background: isActive ? 'rgba(34, 56, 255, 0.08)' : 'transparent',
-    })}>
-      {children}
-    </NavLink>
   )
 }
