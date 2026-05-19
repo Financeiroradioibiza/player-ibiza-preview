@@ -626,9 +626,82 @@ function UploadForm({ previewId, onUploaded }) {
     })
   }
 
-  // Tenta extrair "Artista - Título" do nome do arquivo
-  function parseFilename(name) {
-    const base = name.replace(/\.(mp3|m4a|wav|aac|ogg|flac)$/i, '')
+  // Lê tags ID3v2 (que cobre 99% dos MP3 modernos)
+  async function readId3Tags(file) {
+    try {
+      // Lê os primeiros 1MB do arquivo (cabeçalho + tags geralmente ficam aí)
+      const buffer = await file.slice(0, 1024 * 1024).arrayBuffer()
+      const bytes = new Uint8Array(buffer)
+
+      // Verifica magic "ID3"
+      if (bytes[0] !== 0x49 || bytes[1] !== 0x44 || bytes[2] !== 0x33) return null
+
+      const version = bytes[3] // 3 ou 4
+      // Tamanho do bloco de tags (synchsafe integer)
+      const size = ((bytes[6] & 0x7f) << 21) | ((bytes[7] & 0x7f) << 14) |
+                   ((bytes[8] & 0x7f) << 7) | (bytes[9] & 0x7f)
+
+      let pos = 10
+      const end = Math.min(10 + size, bytes.length)
+      const tags = {}
+
+      while (pos < end - 10) {
+        const frameId = String.fromCharCode(bytes[pos], bytes[pos+1], bytes[pos+2], bytes[pos+3])
+        if (!/^[A-Z0-9]{4}$/.test(frameId)) break
+
+        let frameSize
+        if (version === 4) {
+          frameSize = ((bytes[pos+4] & 0x7f) << 21) | ((bytes[pos+5] & 0x7f) << 14) |
+                      ((bytes[pos+6] & 0x7f) << 7) | (bytes[pos+7] & 0x7f)
+        } else {
+          frameSize = (bytes[pos+4] << 24) | (bytes[pos+5] << 16) |
+                      (bytes[pos+6] << 8) | bytes[pos+7]
+        }
+
+        if (frameSize <= 0 || pos + 10 + frameSize > end) break
+
+        const dataStart = pos + 10
+        const encoding = bytes[dataStart]
+        const textBytes = bytes.slice(dataStart + 1, dataStart + frameSize)
+
+        let text = ''
+        if (encoding === 0) {
+          // ISO-8859-1 (latin1)
+          text = new TextDecoder('iso-8859-1').decode(textBytes)
+        } else if (encoding === 1 || encoding === 2) {
+          // UTF-16 (com ou sem BOM)
+          text = new TextDecoder('utf-16').decode(textBytes)
+        } else if (encoding === 3) {
+          // UTF-8
+          text = new TextDecoder('utf-8').decode(textBytes)
+        }
+        text = text.replace(/\u0000+$/g, '').trim()
+
+        if (frameId === 'TIT2') tags.title = text
+        else if (frameId === 'TPE1') tags.artist = text
+        else if (frameId === 'TPE2' && !tags.artist) tags.artist = text
+
+        pos = dataStart + frameSize
+      }
+
+      return tags
+    } catch (e) {
+      console.warn('Erro lendo tags:', e)
+      return null
+    }
+  }
+
+  // Extrai metadados do arquivo: tenta tags ID3 primeiro, cai no nome do arquivo
+  async function extractMetadata(file) {
+    const tags = await readId3Tags(file)
+    if (tags?.title) {
+      return {
+        title: tags.title,
+        artist: tags.artist || 'Desconhecido',
+      }
+    }
+    // Fallback: nome do arquivo
+    const base = file.name.replace(/\.(mp3|m4a|wav|aac|ogg|flac)$/i, '')
     const parts = base.split(' - ')
     if (parts.length >= 2) {
       return { artist: parts[0].trim(), title: parts.slice(1).join(' - ').trim() }
@@ -648,7 +721,7 @@ function UploadForm({ previewId, onUploaded }) {
         const file = files[i]
         setProgress({ done: i, total: files.length, current: file.name })
         try {
-          const { title, artist } = parseFilename(file.name)
+          const { title, artist } = await extractMetadata(file)
           const ext = file.name.split('.').pop().toLowerCase()
           const path = `${crypto.randomUUID()}.${ext}`
 
@@ -720,7 +793,7 @@ function UploadForm({ previewId, onUploaded }) {
       {files.length > 0 && (
         <div style={{ marginTop: 12 }}>
           <p className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
-            <strong>Dica:</strong> nomes no formato <span className="mono">"Artista - Música.mp3"</span> são reconhecidos automaticamente. Outros viram "Desconhecido — nome do arquivo" e você pode editar depois.
+            <strong>Como funciona:</strong> usamos a tag interna do MP3 (ID3) para pegar nome e artista corretos. Se o arquivo não tiver tag, usamos o nome do arquivo (formato <span className="mono">"Artista - Música"</span>).
           </p>
           <div style={{ maxHeight: 200, overflowY: 'auto', display: 'grid', gap: 4, marginBottom: 12 }}>
             {files.map((f, i) => (
