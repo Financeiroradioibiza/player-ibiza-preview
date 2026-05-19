@@ -1,241 +1,474 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useNavigate, useParams, Link } from 'react-router-dom'
 import { supabase, generateCode } from '../../lib/supabase.js'
 
 export default function PreviewEditor() {
   const navigate = useNavigate()
   const { id } = useParams()
-  const isEditing = !!id
 
+  const [preview, setPreview] = useState(null)
+  const [tracks, setTracks] = useState([])
+  const [job, setJob] = useState(null)
+  const [jobItems, setJobItems] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [currentUserId, setCurrentUserId] = useState(null)
+
+  // Inputs do setup
   const [clientName, setClientName] = useState('')
-  const [code, setCode] = useState(generateCode())
   const [days, setDays] = useState(7)
-  const [allTracks, setAllTracks] = useState([])
-  const [selectedIds, setSelectedIds] = useState([])
-  const [search, setSearch] = useState('')
-  const [saving, setSaving] = useState(false)
+  const [playlistUrl, setPlaylistUrl] = useState('')
+
+  const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
 
   useEffect(() => {
-    loadTracks()
-    if (isEditing) loadPreview()
+    supabase.auth.getUser().then(({ data }) => setCurrentUserId(data.user?.id))
+  }, [])
+
+  useEffect(() => {
+    if (id) {
+      load()
+      const t = setInterval(load, 4000)
+      return () => clearInterval(t)
+    } else {
+      setLoading(false)
+    }
   }, [id])
 
-  async function loadTracks() {
-    const { data } = await supabase
-      .from('tracks')
-      .select('*')
-      .eq('status', 'approved')
-      .order('title')
-    setAllTracks(data || [])
-  }
-
-  async function loadPreview() {
+  async function load() {
     const { data: p } = await supabase
       .from('previews')
-      .select('*, preview_tracks(track_id, position)')
+      .select('*')
       .eq('id', id)
       .single()
-    if (!p) return
-    setClientName(p.client_name)
-    setCode(p.code)
-    const created = new Date(p.created_at)
-    const expires = new Date(p.expires_at)
-    setDays(Math.round((expires - created) / 86400000))
-    const sorted = (p.preview_tracks || []).sort((a, b) => a.position - b.position)
-    setSelectedIds(sorted.map((t) => t.track_id))
+    setPreview(p)
+    if (p) {
+      setClientName(p.client_name)
+      setDays(p.days_valid)
+    }
+
+    const { data: t } = await supabase
+      .from('tracks')
+      .select('*')
+      .eq('preview_id', id)
+      .order('position')
+      .order('created_at')
+    setTracks(t || [])
+
+    const { data: jobs } = await supabase
+      .from('download_jobs')
+      .select('*')
+      .eq('preview_id', id)
+      .order('created_at', { ascending: false })
+      .limit(1)
+    const j = jobs?.[0]
+    setJob(j || null)
+
+    if (j) {
+      const { data: items } = await supabase
+        .from('download_job_items')
+        .select('*')
+        .eq('job_id', j.id)
+        .order('updated_at')
+      setJobItems(items || [])
+    }
+
+    setLoading(false)
   }
 
-  function toggle(trackId) {
-    setSelectedIds((prev) =>
-      prev.includes(trackId) ? prev.filter((id) => id !== trackId) : [...prev, trackId]
-    )
-  }
-
-  function moveTrack(trackId, direction) {
-    setSelectedIds((prev) => {
-      const idx = prev.indexOf(trackId)
-      if (idx === -1) return prev
-      const newIdx = idx + direction
-      if (newIdx < 0 || newIdx >= prev.length) return prev
-      const copy = [...prev]
-      ;[copy[idx], copy[newIdx]] = [copy[newIdx], copy[idx]]
-      return copy
-    })
-  }
-
-  async function save() {
+  // --- Criar preview rascunho ---
+  async function createDraft(e) {
+    e.preventDefault()
     setError('')
     if (!clientName.trim()) { setError('Informe o nome do cliente'); return }
-    if (selectedIds.length === 0) { setError('Selecione pelo menos uma faixa'); return }
-    setSaving(true)
+    setSubmitting(true)
     try {
-      const expiresAt = new Date(Date.now() + days * 86400000).toISOString()
       const { data: { user } } = await supabase.auth.getUser()
-
-      let previewId = id
-      if (isEditing) {
-        const { error } = await supabase
-          .from('previews')
-          .update({ client_name: clientName.trim(), expires_at: expiresAt, days_valid: days })
-          .eq('id', id)
-        if (error) throw error
-        await supabase.from('preview_tracks').delete().eq('preview_id', id)
-      } else {
-        const { data, error } = await supabase
-          .from('previews')
-          .insert({
-            code, client_name: clientName.trim(),
-            days_valid: days, expires_at: expiresAt,
-            created_by: user.id,
-          })
-          .select().single()
-        if (error) throw error
-        previewId = data.id
-      }
-
-      const rows = selectedIds.map((trackId, position) => ({
-        preview_id: previewId, track_id: trackId, position,
-      }))
-      const { error: linkErr } = await supabase.from('preview_tracks').insert(rows)
-      if (linkErr) throw linkErr
-
-      navigate(`/admin/previews/${previewId}`)
+      const { data, error } = await supabase
+        .from('previews')
+        .insert({
+          client_name: clientName.trim(),
+          days_valid: days,
+          status: 'draft',
+          created_by: user.id,
+        })
+        .select()
+        .single()
+      if (error) throw error
+      navigate(`/admin/previews/${data.id}/edit`)
     } catch (e) {
-      setError(e.message || 'Erro ao salvar')
+      setError(e.message || 'Erro')
     } finally {
-      setSaving(false)
+      setSubmitting(false)
     }
   }
 
-  const filtered = allTracks.filter((t) =>
-    (t.title + ' ' + t.artist).toLowerCase().includes(search.toLowerCase())
-  )
+  // --- Atualizar config básica (nome/dias) ---
+  async function updateConfig() {
+    await supabase.from('previews').update({
+      client_name: clientName.trim(),
+      days_valid: days,
+    }).eq('id', id)
+    load()
+  }
+
+  // --- Iniciar download ---
+  async function startDownload() {
+    setError('')
+    if (!playlistUrl.match(/spotify\.com\/playlist\//)) {
+      setError('Cole um link válido de playlist do Spotify')
+      return
+    }
+    setSubmitting(true)
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      const { error } = await supabase.from('download_jobs').insert({
+        preview_id: id,
+        spotify_url: playlistUrl.trim(),
+        created_by: user.id,
+      })
+      if (error) throw error
+      setPlaylistUrl('')
+      load()
+    } catch (e) {
+      setError(e.message || 'Erro ao criar job')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  // --- Aprovar/Rejeitar música ---
+  async function approveTrack(track) {
+    await supabase.from('tracks').update({ status: 'approved' }).eq('id', track.id)
+    load()
+  }
+
+  async function rejectTrack(track) {
+    if (!confirm(`Rejeitar "${track.title}"? O arquivo será excluído.`)) return
+    if (track.storage_path) {
+      await supabase.storage.from('tracks').remove([track.storage_path])
+    }
+    await supabase.from('tracks').delete().eq('id', track.id)
+    load()
+  }
+
+  // --- Publicar (ativar) ---
+  async function publish() {
+    if (!tracks.some(t => t.status === 'approved')) {
+      alert('Aprove pelo menos uma música antes de publicar.')
+      return
+    }
+    if (tracks.some(t => t.status === 'pending_review')) {
+      if (!confirm('Existem músicas pendentes ainda. Elas não vão aparecer pro cliente até serem aprovadas. Publicar mesmo assim?')) return
+    }
+
+    const code = preview.code || generateCode()
+    const expiresAt = new Date(Date.now() + (days || 7) * 86400000).toISOString()
+
+    await supabase.from('previews').update({
+      status: 'active',
+      code,
+      expires_at: expiresAt,
+      client_name: clientName.trim(),
+      days_valid: days,
+    }).eq('id', id)
+
+    navigate(`/admin/previews/${id}`)
+  }
+
+  // --- Excluir o rascunho inteiro ---
+  async function deleteDraft() {
+    if (!confirm('Excluir este rascunho? Todas as músicas baixadas serão removidas.')) return
+    // remove arquivos do storage
+    const paths = tracks.filter(t => t.storage_path).map(t => t.storage_path)
+    if (paths.length > 0) {
+      await supabase.storage.from('tracks').remove(paths)
+    }
+    await supabase.from('previews').delete().eq('id', id)
+    navigate('/admin')
+  }
+
+  if (loading) return <div className="muted">Carregando…</div>
+
+  // ====== Modo 1: Criar novo preview (sem id ainda) ======
+  if (!id) {
+    return (
+      <div>
+        <Link to="/admin" className="muted" style={{ fontSize: 13 }}>← Voltar</Link>
+        <h1 className="display" style={{ fontSize: 36, fontWeight: 400, margin: '8px 0 24px' }}>
+          Novo preview
+        </h1>
+        <div className="card" style={{ maxWidth: 560 }}>
+          <p className="muted" style={{ fontSize: 14, marginBottom: 20 }}>
+            Comece preenchendo as informações básicas. Depois você poderá baixar a playlist do Spotify e aprovar as músicas antes de publicar.
+          </p>
+          <form onSubmit={createDraft} style={{ display: 'grid', gap: 16 }}>
+            <div className="field">
+              <label>Nome do cliente</label>
+              <input className="input" value={clientName}
+                onChange={(e) => setClientName(e.target.value)}
+                placeholder="Ex: Restaurante Casa 21" required autoFocus />
+            </div>
+            <div className="field">
+              <label>Validade (dias após publicação)</label>
+              <input className="input" type="number" min={1} max={365}
+                value={days} onChange={(e) => setDays(parseInt(e.target.value) || 1)} required />
+            </div>
+            {error && <div style={{ color: 'var(--rose)', fontSize: 14 }}>{error}</div>}
+            <button className="btn btn-primary" disabled={submitting}
+              style={{ justifyContent: 'center', padding: 12 }}>
+              {submitting ? 'Criando…' : 'Continuar →'}
+            </button>
+          </form>
+        </div>
+      </div>
+    )
+  }
+
+  // ====== Modo 2: Editar preview existente ======
+  if (!preview) return <div className="muted">Preview não encontrado.</div>
+
+  const isMine = currentUserId === preview.created_by
+  if (!isMine) {
+    return (
+      <div>
+        <Link to="/admin" className="muted" style={{ fontSize: 13 }}>← Voltar</Link>
+        <div className="card" style={{ marginTop: 16, textAlign: 'center', padding: 40 }}>
+          <p>Este preview foi criado por outro admin.</p>
+          <p className="muted" style={{ marginTop: 8 }}>Apenas o criador pode editar.</p>
+          <Link to={`/admin/previews/${id}`} className="btn btn-primary" style={{ marginTop: 16 }}>
+            Ver detalhes (somente leitura)
+          </Link>
+        </div>
+      </div>
+    )
+  }
+
+  if (preview.status !== 'draft') {
+    // Já foi publicado — redireciona pro detalhe
+    return (
+      <div>
+        <Link to="/admin" className="muted" style={{ fontSize: 13 }}>← Voltar</Link>
+        <div className="card" style={{ marginTop: 16 }}>
+          <p>Este preview já foi publicado. Vá para <Link to={`/admin/previews/${id}`} style={{ color: 'var(--cobalt)' }}>os detalhes</Link> para gerenciar.</p>
+        </div>
+      </div>
+    )
+  }
+
+  const approvedCount = tracks.filter(t => t.status === 'approved').length
+  const pendingCount = tracks.filter(t => t.status === 'pending_review').length
+  const isJobActive = job && (job.status === 'queued' || job.status === 'processing')
 
   return (
     <div>
       <Link to="/admin" className="muted" style={{ fontSize: 13 }}>← Voltar</Link>
-      <h1 className="display" style={{ fontSize: 36, fontWeight: 400, margin: '8px 0 24px' }}>
-        {isEditing ? 'Editar preview' : 'Novo preview'}
-      </h1>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginTop: 8, marginBottom: 24, flexWrap: 'wrap', gap: 12 }}>
+        <div>
+          <span className="badge badge-warn" style={{ fontSize: 10 }}>RASCUNHO</span>
+          <h1 className="display" style={{ fontSize: 32, fontWeight: 400, marginTop: 4 }}>
+            {preview.client_name}
+          </h1>
+        </div>
+        <button className="btn btn-danger" onClick={deleteDraft}>Excluir rascunho</button>
+      </div>
 
-      <div style={{ display: 'grid', gap: 20, gridTemplateColumns: '1fr 1fr' }}>
-        <div className="card">
-          <h3 style={{ marginBottom: 16, fontSize: 14, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--muted)' }}>
-            Configuração
-          </h3>
-          <div style={{ display: 'grid', gap: 14 }}>
-            <div className="field">
-              <label>Nome do cliente</label>
-              <input className="input" value={clientName} onChange={(e) => setClientName(e.target.value)}
-                placeholder="Ex: Restaurante Casa 21" />
-            </div>
-            <div className="field">
-              <label>Código de acesso</label>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <input className="input mono" value={code}
-                  onChange={(e) => setCode(e.target.value.toUpperCase())}
-                  disabled={isEditing}
-                  style={{ flex: 1, letterSpacing: '0.1em' }} />
-                {!isEditing && (
-                  <button className="btn btn-ghost btn-sm" type="button"
-                    onClick={() => setCode(generateCode())}>
-                    Gerar novo
-                  </button>
-                )}
-              </div>
-            </div>
-            <div className="field">
-              <label>Validade (dias)</label>
-              <input className="input" type="number" min={1} max={365}
-                value={days} onChange={(e) => setDays(parseInt(e.target.value) || 1)} />
-              <small className="muted" style={{ fontSize: 12 }}>
-                Expira em {new Date(Date.now() + days * 86400000).toLocaleDateString('pt-BR')}
-              </small>
-            </div>
+      {/* Seção: Configuração */}
+      <div className="card" style={{ marginBottom: 20 }}>
+        <h3 style={{ fontSize: 14, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--muted)', marginBottom: 12 }}>
+          1. Informações do cliente
+        </h3>
+        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr auto', gap: 12, alignItems: 'flex-end' }}>
+          <div className="field">
+            <label>Nome do cliente</label>
+            <input className="input" value={clientName} onChange={(e) => setClientName(e.target.value)} />
           </div>
+          <div className="field">
+            <label>Validade (dias)</label>
+            <input className="input" type="number" min={1} max={365}
+              value={days} onChange={(e) => setDays(parseInt(e.target.value) || 1)} />
+          </div>
+          <button className="btn btn-ghost" onClick={updateConfig}>Atualizar</button>
+        </div>
+      </div>
 
-          <hr style={{ margin: '20px 0', border: 'none', borderTop: '1px solid var(--border)' }} />
-
-          <h3 style={{ marginBottom: 12, fontSize: 14, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--muted)' }}>
-            Faixas selecionadas ({selectedIds.length})
+      {/* Seção: Download de playlist */}
+      {tracks.length === 0 && !isJobActive && (
+        <div className="card" style={{ marginBottom: 20 }}>
+          <h3 style={{ fontSize: 14, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--muted)', marginBottom: 12 }}>
+            2. Baixar playlist do Spotify
           </h3>
-          {selectedIds.length === 0 ? (
-            <p className="muted" style={{ fontSize: 13 }}>Nenhuma faixa selecionada ainda.</p>
+          <div style={{ display: 'flex', gap: 10 }}>
+            <input className="input" placeholder="https://open.spotify.com/playlist/..."
+              value={playlistUrl} onChange={(e) => setPlaylistUrl(e.target.value)}
+              style={{ flex: 1 }} />
+            <button className="btn btn-accent" onClick={startDownload} disabled={submitting}>
+              {submitting ? 'Enviando…' : 'Baixar playlist'}
+            </button>
+          </div>
+          {error && <div style={{ color: 'var(--rose)', marginTop: 10, fontSize: 14 }}>{error}</div>}
+          <p className="muted" style={{ fontSize: 12, marginTop: 10 }}>
+            Aguarde o download (em média 30s por música). Você pode fechar a página e voltar depois — o progresso fica salvo.
+          </p>
+        </div>
+      )}
+
+      {/* Seção: Progresso do download em andamento */}
+      {isJobActive && (
+        <div className="card" style={{ marginBottom: 20, background: 'rgba(34, 56, 255, 0.04)' }}>
+          <h3 style={{ fontSize: 14, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--cobalt)', marginBottom: 12 }}>
+            Baixando playlist… {job.completed_tracks}/{job.total_tracks || '—'}
+          </h3>
+          {jobItems.length === 0 ? (
+            <p className="muted" style={{ fontSize: 13 }}>Aguardando worker iniciar…</p>
           ) : (
-            <ol style={{ paddingLeft: 0, listStyle: 'none', display: 'grid', gap: 6 }}>
-              {selectedIds.map((tid, i) => {
-                const t = allTracks.find((x) => x.id === tid)
-                if (!t) return null
-                return (
-                  <li key={tid} style={{
-                    display: 'flex', alignItems: 'center', gap: 8,
-                    padding: '8px 10px', background: 'var(--cream-soft)',
-                    borderRadius: 'var(--radius-sm)', fontSize: 13,
-                  }}>
-                    <span className="mono muted" style={{ width: 24 }}>{i + 1}.</span>
-                    <span style={{ flex: 1 }}>{t.title} — <span className="muted">{t.artist}</span></span>
-                    <button type="button" className="btn btn-ghost btn-sm"
-                      onClick={() => moveTrack(tid, -1)} disabled={i === 0}>↑</button>
-                    <button type="button" className="btn btn-ghost btn-sm"
-                      onClick={() => moveTrack(tid, 1)} disabled={i === selectedIds.length - 1}>↓</button>
-                    <button type="button" className="btn btn-ghost btn-sm"
-                      onClick={() => toggle(tid)}>×</button>
-                  </li>
-                )
-              })}
-            </ol>
+            <div style={{ display: 'grid', gap: 4, maxHeight: 280, overflowY: 'auto' }}>
+              {jobItems.map((i) => (
+                <div key={i.id} style={{
+                  display: 'flex', alignItems: 'center', gap: 12,
+                  padding: '6px 10px', background: 'white', borderRadius: 'var(--radius-sm)',
+                  fontSize: 13,
+                }}>
+                  <span style={{ width: 18, textAlign: 'center' }}>
+                    {i.status === 'done' && '✓'}
+                    {i.status === 'failed' && '✗'}
+                    {i.status === 'downloading' && '⏳'}
+                    {i.status === 'pending' && '·'}
+                  </span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {i.title}
+                    </div>
+                    <div className="muted" style={{ fontSize: 11 }}>
+                      {i.artist}
+                      {i.error_message && <span style={{ color: 'var(--rose)' }}> — {i.error_message}</span>}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
           )}
+        </div>
+      )}
 
-          {error && <div style={{ color: 'var(--rose)', marginTop: 16, fontSize: 14 }}>{error}</div>}
+      {/* Seção: Faixas (revisão) */}
+      {tracks.length > 0 && (
+        <div className="card" style={{ marginBottom: 20 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 8 }}>
+            <h3 style={{ fontSize: 14, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--muted)' }}>
+              {isJobActive ? 'Faixas baixadas até agora' : `3. Revisar e aprovar (${approvedCount}/${tracks.length} aprovadas)`}
+            </h3>
+            {!isJobActive && job?.status === 'done' && (
+              <span className="badge badge-active">Download concluído</span>
+            )}
+            {!isJobActive && job?.status === 'failed' && (
+              <span className="badge badge-expired" title={job.error_message}>Download falhou</span>
+            )}
+          </div>
+          <div style={{ display: 'grid', gap: 6 }}>
+            {tracks.map((t) => (
+              <TrackRow key={t.id} track={t}
+                onApprove={() => approveTrack(t)}
+                onReject={() => rejectTrack(t)} />
+            ))}
+          </div>
+        </div>
+      )}
 
-          <button className="btn btn-primary" onClick={save} disabled={saving}
-            style={{ marginTop: 20, justifyContent: 'center', width: '100%' }}>
-            {saving ? 'Salvando…' : isEditing ? 'Salvar alterações' : 'Criar preview'}
+      {/* Seção: Publicar */}
+      {tracks.length > 0 && !isJobActive && (
+        <div className="card" style={{
+          background: approvedCount > 0 ? 'rgba(34, 56, 255, 0.04)' : undefined,
+          border: approvedCount > 0 ? '1px solid var(--cobalt)' : undefined,
+        }}>
+          <h3 style={{ fontSize: 14, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--muted)', marginBottom: 8 }}>
+            4. Publicar para o cliente
+          </h3>
+          <p style={{ fontSize: 14, marginBottom: 12 }}>
+            {approvedCount === 0 && 'Aprove pelo menos uma música para publicar.'}
+            {approvedCount > 0 && pendingCount === 0 && (
+              <>Tudo pronto. <strong>{approvedCount} músicas aprovadas</strong>, prazo de <strong>{days} dias</strong>.</>
+            )}
+            {approvedCount > 0 && pendingCount > 0 && (
+              <>{approvedCount} aprovadas, {pendingCount} ainda pendentes. As pendentes não aparecerão para o cliente.</>
+            )}
+          </p>
+          <button className="btn btn-accent" onClick={publish} disabled={approvedCount === 0}
+            style={{ padding: '12px 24px' }}>
+            Publicar preview e gerar código →
           </button>
         </div>
+      )}
+    </div>
+  )
+}
 
-        <div className="card">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-            <h3 style={{ fontSize: 14, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--muted)' }}>
-              Acervo aprovado
-            </h3>
-            <Link to="/admin/tracks" className="muted" style={{ fontSize: 12 }}>Gerenciar →</Link>
-          </div>
-          <input className="input" placeholder="Buscar por título ou artista"
-            value={search} onChange={(e) => setSearch(e.target.value)}
-            style={{ marginBottom: 12 }} />
-          <div style={{ maxHeight: 500, overflowY: 'auto', display: 'grid', gap: 4 }}>
-            {filtered.length === 0 ? (
-              <p className="muted" style={{ fontSize: 13, padding: 12 }}>
-                Nenhuma música aprovada. <Link to="/admin/tracks" style={{ color: 'var(--cobalt)' }}>Aprovar pendentes</Link>.
-              </p>
-            ) : filtered.map((t) => {
-              const selected = selectedIds.includes(t.id)
-              return (
-                <button key={t.id} type="button" onClick={() => toggle(t.id)}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 10,
-                    padding: '8px 10px', textAlign: 'left',
-                    borderRadius: 'var(--radius-sm)',
-                    background: selected ? 'rgba(34, 56, 255, 0.08)' : 'transparent',
-                    border: `1px solid ${selected ? 'var(--cobalt)' : 'transparent'}`,
-                  }}>
-                  <span style={{
-                    width: 18, height: 18, borderRadius: 4,
-                    border: '1.5px solid ' + (selected ? 'var(--cobalt)' : 'var(--border-strong)'),
-                    background: selected ? 'var(--cobalt)' : 'transparent',
-                    color: 'white', fontSize: 12, display: 'grid', placeItems: 'center',
-                  }}>{selected ? '✓' : ''}</span>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 14 }}>{t.title}</div>
-                    <div className="muted" style={{ fontSize: 12 }}>{t.artist}</div>
-                  </div>
-                </button>
-              )
-            })}
-          </div>
+function TrackRow({ track, onApprove, onReject }) {
+  const [url, setUrl] = useState(null)
+  const [playing, setPlaying] = useState(false)
+  const audioRef = useRef(null)
+
+  async function togglePlay() {
+    if (!track.storage_path) return
+    if (playing) {
+      audioRef.current?.pause()
+      return
+    }
+    if (!url) {
+      const { data } = await supabase.storage
+        .from('tracks').createSignedUrl(track.storage_path, 600)
+      setUrl(data?.signedUrl)
+      // dá um tempinho pro src atualizar
+      setTimeout(() => audioRef.current?.play(), 100)
+    } else {
+      audioRef.current?.play()
+    }
+  }
+
+  function fmtDuration(s) {
+    if (!s) return '—'
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+  }
+
+  const isApproved = track.status === 'approved'
+
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 12,
+      padding: 10, background: isApproved ? 'rgba(34,197,94,0.06)' : 'var(--cream-soft)',
+      borderRadius: 'var(--radius-sm)',
+      border: isApproved ? '1px solid rgba(34,197,94,0.3)' : '1px solid transparent',
+    }}>
+      <button onClick={togglePlay} disabled={!track.storage_path} style={{
+        width: 36, height: 36, borderRadius: '50%',
+        background: 'var(--ink)', color: 'var(--cream)',
+        display: 'grid', placeItems: 'center', flexShrink: 0,
+        cursor: track.storage_path ? 'pointer' : 'not-allowed',
+        opacity: track.storage_path ? 1 : 0.4,
+      }}>
+        {playing
+          ? <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M6 4h4v16H6zM14 4h4v16h-4z"/></svg>
+          : <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style={{ marginLeft: 2 }}><path d="M8 5v14l11-7z"/></svg>}
+      </button>
+      <audio ref={audioRef} src={url || undefined}
+        onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onEnded={() => setPlaying(false)} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontWeight: 500, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {track.title}
         </div>
+        <div className="muted" style={{ fontSize: 12 }}>
+          {track.artist} <span className="mono">· {fmtDuration(track.duration_seconds)}</span>
+        </div>
+      </div>
+      <div style={{ display: 'flex', gap: 6 }}>
+        {isApproved ? (
+          <button className="btn btn-ghost btn-sm" onClick={onReject}>Remover</button>
+        ) : (
+          <>
+            <button className="btn btn-accent btn-sm" onClick={onApprove}>✓ Aprovar</button>
+            <button className="btn btn-danger btn-sm" onClick={onReject}>Rejeitar</button>
+          </>
+        )}
       </div>
     </div>
   )
