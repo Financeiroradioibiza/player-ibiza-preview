@@ -393,70 +393,170 @@ export default function PreviewEditor() {
 function TrackRow({ track, onApprove, onReject }) {
   const [url, setUrl] = useState(null)
   const [playing, setPlaying] = useState(false)
+  const [progress, setProgress] = useState(0)
+  const [duration, setDuration] = useState(0)
+  const [showPlayer, setShowPlayer] = useState(false)
   const audioRef = useRef(null)
+
+  async function loadUrl() {
+    if (url) return url
+    const { data } = await supabase.storage
+      .from('tracks').createSignedUrl(track.storage_path, 600)
+    setUrl(data?.signedUrl)
+    return data?.signedUrl
+  }
 
   async function togglePlay() {
     if (!track.storage_path) return
-    if (playing) {
-      audioRef.current?.pause()
+    if (!showPlayer) {
+      setShowPlayer(true)
+      await loadUrl()
+      setTimeout(() => audioRef.current?.play(), 100)
       return
     }
-    if (!url) {
-      const { data } = await supabase.storage
-        .from('tracks').createSignedUrl(track.storage_path, 600)
-      setUrl(data?.signedUrl)
-      // dá um tempinho pro src atualizar
-      setTimeout(() => audioRef.current?.play(), 100)
-    } else {
-      audioRef.current?.play()
-    }
+    if (playing) audioRef.current?.pause()
+    else audioRef.current?.play()
+  }
+
+  function onTimeUpdate() {
+    if (!audioRef.current) return
+    setProgress(audioRef.current.currentTime)
+    setDuration(audioRef.current.duration || 0)
+  }
+
+  function seek(e) {
+    if (!audioRef.current || !duration) return
+    const rect = e.currentTarget.getBoundingClientRect()
+    const pct = (e.clientX - rect.left) / rect.width
+    audioRef.current.currentTime = Math.max(0, Math.min(duration, pct * duration))
+  }
+
+  function skip(seconds) {
+    if (!audioRef.current || !duration) return
+    audioRef.current.currentTime = Math.max(0, Math.min(duration, audioRef.current.currentTime + seconds))
+  }
+
+  function jumpTo(fraction) {
+    if (!audioRef.current || !duration) return
+    audioRef.current.currentTime = duration * fraction
+    if (!playing) audioRef.current.play()
   }
 
   function fmtDuration(s) {
-    if (!s) return '—'
-    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+    if (!s || isNaN(s)) return '0:00'
+    return `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`
   }
 
   const isApproved = track.status === 'approved'
 
   return (
     <div style={{
-      display: 'flex', alignItems: 'center', gap: 12,
-      padding: 10, background: isApproved ? 'rgba(34,197,94,0.06)' : 'var(--cream-soft)',
+      padding: showPlayer ? '12px 14px 14px' : 10,
+      background: isApproved ? 'rgba(34,197,94,0.06)' : 'var(--cream-soft)',
       borderRadius: 'var(--radius-sm)',
       border: isApproved ? '1px solid rgba(34,197,94,0.3)' : '1px solid transparent',
+      transition: 'padding 0.15s',
     }}>
-      <button onClick={togglePlay} disabled={!track.storage_path} style={{
-        width: 36, height: 36, borderRadius: '50%',
-        background: 'var(--ink)', color: 'var(--cream)',
-        display: 'grid', placeItems: 'center', flexShrink: 0,
-        cursor: track.storage_path ? 'pointer' : 'not-allowed',
-        opacity: track.storage_path ? 1 : 0.4,
-      }}>
-        {playing
-          ? <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M6 4h4v16H6zM14 4h4v16h-4z"/></svg>
-          : <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style={{ marginLeft: 2 }}><path d="M8 5v14l11-7z"/></svg>}
-      </button>
-      <audio ref={audioRef} src={url || undefined}
-        onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onEnded={() => setPlaying(false)} />
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontWeight: 500, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {track.title}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <button onClick={togglePlay} disabled={!track.storage_path} style={{
+          width: 36, height: 36, borderRadius: '50%',
+          background: 'var(--ink)', color: 'var(--cream)',
+          display: 'grid', placeItems: 'center', flexShrink: 0,
+          cursor: track.storage_path ? 'pointer' : 'not-allowed',
+          opacity: track.storage_path ? 1 : 0.4,
+        }}>
+          {playing
+            ? <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M6 4h4v16H6zM14 4h4v16h-4z"/></svg>
+            : <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style={{ marginLeft: 2 }}><path d="M8 5v14l11-7z"/></svg>}
+        </button>
+        <audio
+          ref={audioRef} src={url || undefined}
+          onPlay={() => setPlaying(true)}
+          onPause={() => setPlaying(false)}
+          onEnded={() => setPlaying(false)}
+          onTimeUpdate={onTimeUpdate}
+          onLoadedMetadata={onTimeUpdate}
+        />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontWeight: 500, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {track.title}
+          </div>
+          <div className="muted" style={{ fontSize: 12 }}>
+            {track.artist} <span className="mono">· {fmtDuration(track.duration_seconds)}</span>
+          </div>
         </div>
-        <div className="muted" style={{ fontSize: 12 }}>
-          {track.artist} <span className="mono">· {fmtDuration(track.duration_seconds)}</span>
+        <div style={{ display: 'flex', gap: 6 }}>
+          {isApproved ? (
+            <button className="btn btn-ghost btn-sm" onClick={onReject}>Remover</button>
+          ) : (
+            <>
+              <button className="btn btn-accent btn-sm" onClick={onApprove}>✓ Aprovar</button>
+              <button className="btn btn-danger btn-sm" onClick={onReject}>Rejeitar</button>
+            </>
+          )}
         </div>
       </div>
-      <div style={{ display: 'flex', gap: 6 }}>
-        {isApproved ? (
-          <button className="btn btn-ghost btn-sm" onClick={onReject}>Remover</button>
-        ) : (
-          <>
-            <button className="btn btn-accent btn-sm" onClick={onApprove}>✓ Aprovar</button>
-            <button className="btn btn-danger btn-sm" onClick={onReject}>Rejeitar</button>
-          </>
-        )}
-      </div>
+
+      {/* Player expandido com barra de progresso */}
+      {showPlayer && (
+        <div style={{ marginTop: 12, paddingLeft: 48 }}>
+          {/* Barra de progresso clicável */}
+          <div
+            onClick={seek}
+            style={{
+              height: 6,
+              background: 'rgba(0,0,0,0.1)',
+              borderRadius: 3,
+              cursor: 'pointer',
+              overflow: 'hidden',
+              position: 'relative',
+              marginBottom: 4,
+            }}
+          >
+            {/* Marcadores de quartos (0, 25%, 50%, 75%) */}
+            {[0.25, 0.5, 0.75].map((frac) => (
+              <div key={frac} style={{
+                position: 'absolute',
+                left: `${frac * 100}%`,
+                top: 0,
+                bottom: 0,
+                width: 1,
+                background: 'rgba(0,0,0,0.15)',
+              }} />
+            ))}
+            <div style={{
+              width: duration ? `${(progress / duration) * 100}%` : '0%',
+              height: '100%',
+              background: 'var(--cobalt)',
+              transition: 'width 0.1s linear',
+            }} />
+          </div>
+
+          {/* Tempo + atalhos */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <span className="mono" style={{ fontSize: 11, color: 'var(--muted)' }}>
+              {fmtDuration(progress)} / {fmtDuration(duration)}
+            </span>
+            <div style={{ display: 'flex', gap: 4, marginLeft: 'auto' }}>
+              <button className="btn btn-ghost btn-sm" onClick={() => skip(-15)} style={{ fontSize: 11, padding: '4px 8px' }}>
+                ⏪ 15s
+              </button>
+              <button className="btn btn-ghost btn-sm" onClick={() => jumpTo(0)} style={{ fontSize: 11, padding: '4px 8px' }}>
+                Início
+              </button>
+              <button className="btn btn-ghost btn-sm" onClick={() => jumpTo(0.5)} style={{ fontSize: 11, padding: '4px 8px' }}>
+                Meio
+              </button>
+              <button className="btn btn-ghost btn-sm" onClick={() => jumpTo(0.85)} style={{ fontSize: 11, padding: '4px 8px' }}>
+                Final
+              </button>
+              <button className="btn btn-ghost btn-sm" onClick={() => skip(15)} style={{ fontSize: 11, padding: '4px 8px' }}>
+                15s ⏩
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
