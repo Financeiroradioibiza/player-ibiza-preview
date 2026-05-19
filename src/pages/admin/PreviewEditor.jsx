@@ -143,6 +143,15 @@ export default function PreviewEditor() {
     load()
   }
 
+  async function approveAll() {
+    const pending = tracks.filter(t => t.status === 'pending_review')
+    if (pending.length === 0) return
+    if (!confirm(`Aprovar todas as ${pending.length} músicas pendentes?`)) return
+    const ids = pending.map(t => t.id)
+    await supabase.from('tracks').update({ status: 'approved' }).in('id', ids)
+    load()
+  }
+
   async function rejectTrack(track) {
     if (!confirm(`Rejeitar "${track.title}"? O arquivo será excluído.`)) return
     if (track.storage_path) {
@@ -345,12 +354,19 @@ export default function PreviewEditor() {
             <h3 style={{ fontSize: 14, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--muted)' }}>
               {isJobActive ? 'Faixas baixadas até agora' : `3. Revisar e aprovar (${approvedCount}/${tracks.length} aprovadas)`}
             </h3>
-            {!isJobActive && job?.status === 'done' && (
-              <span className="badge badge-active">Download concluído</span>
-            )}
-            {!isJobActive && job?.status === 'failed' && (
-              <span className="badge badge-expired" title={job.error_message}>Download falhou</span>
-            )}
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              {!isJobActive && job?.status === 'done' && (
+                <span className="badge badge-active">Download concluído</span>
+              )}
+              {!isJobActive && job?.status === 'failed' && (
+                <span className="badge badge-expired" title={job.error_message}>Download falhou</span>
+              )}
+              {pendingCount > 0 && (
+                <button className="btn btn-accent btn-sm" onClick={approveAll}>
+                  ✓ Aprovar todas ({pendingCount})
+                </button>
+              )}
+            </div>
           </div>
           <div style={{ display: 'grid', gap: 6 }}>
             {tracks.map((t) => (
@@ -397,6 +413,22 @@ function TrackRow({ track, onApprove, onReject }) {
   const [duration, setDuration] = useState(0)
   const [showPlayer, setShowPlayer] = useState(false)
   const audioRef = useRef(null)
+  const myId = track.id
+
+  // Quando outro TrackRow começa a tocar, pausa este
+  useEffect(() => {
+    function onOtherPlay(e) {
+      if (e.detail?.trackId !== myId && audioRef.current && !audioRef.current.paused) {
+        audioRef.current.pause()
+      }
+    }
+    window.addEventListener('radioibiza:trackplay', onOtherPlay)
+    return () => window.removeEventListener('radioibiza:trackplay', onOtherPlay)
+  }, [myId])
+
+  function announcePlay() {
+    window.dispatchEvent(new CustomEvent('radioibiza:trackplay', { detail: { trackId: myId } }))
+  }
 
   async function loadUrl() {
     if (url) return url
@@ -409,13 +441,17 @@ function TrackRow({ track, onApprove, onReject }) {
   async function togglePlay() {
     if (!track.storage_path) return
     if (!showPlayer) {
+      announcePlay()
       setShowPlayer(true)
       await loadUrl()
       setTimeout(() => audioRef.current?.play(), 100)
       return
     }
     if (playing) audioRef.current?.pause()
-    else audioRef.current?.play()
+    else {
+      announcePlay()
+      audioRef.current?.play()
+    }
   }
 
   function onTimeUpdate() {
@@ -439,7 +475,10 @@ function TrackRow({ track, onApprove, onReject }) {
   function jumpTo(fraction) {
     if (!audioRef.current || !duration) return
     audioRef.current.currentTime = duration * fraction
-    if (!playing) audioRef.current.play()
+    if (!playing) {
+      announcePlay()
+      audioRef.current.play()
+    }
   }
 
   function fmtDuration(s) {
