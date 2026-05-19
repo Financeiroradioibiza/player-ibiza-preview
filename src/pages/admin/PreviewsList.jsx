@@ -17,7 +17,7 @@ export default function PreviewsList() {
 
   async function load() {
     setLoading(true)
-    let query = supabase.from('previews').select('*, tracks(count), access_logs(count)')
+    let query = supabase.from('previews').select('*')
 
     if (tab === 'archived') {
       query = query.eq('is_archived', true)
@@ -25,7 +25,8 @@ export default function PreviewsList() {
       query = query.eq('is_archived', false).eq('status', tab)
     }
 
-    const { data } = await query.order('created_at', { ascending: false })
+    const { data, error } = await query.order('created_at', { ascending: false })
+    if (error) console.error('Erro carregando previews:', error)
     setPreviews(data || [])
 
     // Contagens (queries simples)
@@ -93,8 +94,6 @@ export default function PreviewsList() {
               <tr>
                 <th>Cliente</th>
                 <th>Código</th>
-                <th>Faixas</th>
-                <th>Acessos</th>
                 <th>Status</th>
                 <th></th>
               </tr>
@@ -120,8 +119,6 @@ export default function PreviewsList() {
                         ? <span className="mono" style={{ fontSize: 13 }}>{p.code}</span>
                         : <span className="muted">—</span>}
                     </td>
-                    <td>{p.tracks?.[0]?.count ?? 0}</td>
-                    <td>{p.access_logs?.[0]?.count ?? 0}</td>
                     <td><span className={`badge ${status.cls}`}>{status.label}</span></td>
                     <td style={{ textAlign: 'right' }}>
                       <Link to={`/admin/previews/${p.id}`} className="btn btn-ghost btn-sm">Abrir</Link>
