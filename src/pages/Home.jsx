@@ -2,7 +2,6 @@ import { Link } from 'react-router-dom'
 
 const RI = {
   bg: '#0a0a0a',
-  bgSoft: '#141414',
   pink: '#ff2e8a',
   pinkDeep: '#e01872',
   yellow: '#ffe70a',
@@ -28,16 +27,19 @@ export default function Home() {
         color: RI.textPrimary,
         display: 'grid',
         placeItems: 'center',
-        padding: '40px 24px',
+        padding: '24px 20px',
         fontFamily: FONT_BODY,
       }}>
-        <div style={{ maxWidth: 520, width: '100%', textAlign: 'center' }}>
+        <div style={{ maxWidth: 460, width: '100%', textAlign: 'center' }}>
           {/* Logo */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 14, justifyContent: 'center', marginBottom: 40 }}>
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 12,
+            justifyContent: 'center', marginBottom: 28,
+          }}>
             <Logo />
             <div style={{
               fontFamily: FONT_DISPLAY,
-              fontSize: 26,
+              fontSize: 22,
               fontWeight: 700,
               letterSpacing: '0.08em',
               lineHeight: 1,
@@ -48,7 +50,7 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Hero */}
+          {/* Badge */}
           <div style={{
             display: 'inline-block',
             padding: '4px 10px',
@@ -58,100 +60,82 @@ export default function Home() {
             fontWeight: 700,
             letterSpacing: '0.18em',
             textTransform: 'uppercase',
-            marginBottom: 20,
+            marginBottom: 18,
           }}>
-            IDENTIDADE MUSICAL PARA MARCAS
+            IDENTIDADE MUSICAL
           </div>
 
+          {/* Título */}
           <h1 style={{
             fontFamily: FONT_DISPLAY,
-            fontSize: 'clamp(48px, 9vw, 80px)',
+            fontSize: 'clamp(40px, 12vw, 64px)',
             fontWeight: 700,
             lineHeight: 0.95,
             letterSpacing: '0.005em',
             textTransform: 'uppercase',
-            marginBottom: 16,
+            marginBottom: 14,
           }}>
             A MÚSICA QUE<br />
             FAZ SUA MARCA<br />
             <span style={{ color: RI.pink }}>VIBRAR.</span>
           </h1>
+
           <p style={{
             color: RI.textMuted,
-            fontSize: 16,
-            marginBottom: 36,
-            maxWidth: 380,
+            fontSize: 15,
+            marginBottom: 28,
+            maxWidth: 340,
             marginInline: 'auto',
             lineHeight: 1.5,
           }}>
             Acesse o preview exclusivo da sua identidade musical com o código que recebeu.
           </p>
 
-          {/* CTAs */}
-          <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap', marginBottom: 48 }}>
-            <Link to="/player" style={{
-              padding: '14px 28px',
-              background: RI.pink,
-              color: 'white',
-              fontSize: 13,
-              fontWeight: 700,
-              letterSpacing: '0.12em',
-              textTransform: 'uppercase',
-              textDecoration: 'none',
-              transition: 'background 0.15s',
-              display: 'inline-block',
-            }}
-            onMouseEnter={(e) => e.target.style.background = RI.pinkDeep}
-            onMouseLeave={(e) => e.target.style.background = RI.pink}
-            >
-              Acessar Com Código →
-            </Link>
-            <Link to="/admin/login" style={{
-              padding: '14px 28px',
-              background: 'transparent',
-              color: RI.textPrimary,
-              fontSize: 13,
-              fontWeight: 700,
-              letterSpacing: '0.12em',
-              textTransform: 'uppercase',
-              textDecoration: 'none',
-              border: `1px solid ${RI.borderStrong}`,
-              transition: 'background 0.15s',
-              display: 'inline-block',
-            }}
-            onMouseEnter={(e) => e.target.style.background = 'rgba(255,255,255,0.05)'}
-            onMouseLeave={(e) => e.target.style.background = 'transparent'}
-            >
-              Área administrativa
-            </Link>
-          </div>
+          {/* CTA único */}
+          <Link to="/player" style={{
+            display: 'block',
+            width: '100%',
+            padding: '16px 24px',
+            background: RI.pink,
+            color: 'white',
+            fontSize: 14,
+            fontWeight: 700,
+            letterSpacing: '0.12em',
+            textTransform: 'uppercase',
+            textDecoration: 'none',
+            transition: 'background 0.15s',
+            marginBottom: 32,
+          }}
+          onMouseEnter={(e) => e.target.style.background = RI.pinkDeep}
+          onMouseLeave={(e) => e.target.style.background = RI.pink}
+          >
+            Acessar Com Código →
+          </Link>
 
           {/* Faixa de manifesto rolando */}
           <div style={{
             borderTop: `1px solid ${RI.borderStrong}`,
             borderBottom: `1px solid ${RI.borderStrong}`,
-            padding: '14px 0',
+            padding: '12px 0',
             overflow: 'hidden',
-            marginBottom: 32,
+            marginBottom: 24,
           }}>
             <div style={{
               display: 'flex',
-              gap: 32,
-              animation: 'scroll 30s linear infinite',
+              gap: 24,
+              animation: 'scroll 25s linear infinite',
               whiteSpace: 'nowrap',
               fontFamily: FONT_DISPLAY,
-              fontSize: 13,
+              fontSize: 12,
               letterSpacing: '0.12em',
               textTransform: 'uppercase',
               color: RI.textMuted,
             }}>
               {Array(3).fill(null).map((_, i) => (
-                <span key={i} style={{ display: 'inline-flex', gap: 32, paddingRight: 32 }}>
+                <span key={i} style={{ display: 'inline-flex', gap: 24, paddingRight: 24 }}>
                   <span>★ Som não é detalhe. É posicionamento.</span>
                   <span style={{ color: RI.yellow }}>★</span>
                   <span>Identidade sonora é presença que se escuta.</span>
-                  <span style={{ color: RI.yellow }}>★</span>
-                  <span>Curadoria reconhece contexto.</span>
                   <span style={{ color: RI.yellow }}>★</span>
                 </span>
               ))}
@@ -160,12 +144,12 @@ export default function Home() {
 
           <p style={{
             color: RI.textDim,
-            fontSize: 11,
+            fontSize: 10,
             letterSpacing: '0.2em',
             textTransform: 'uppercase',
             fontFamily: FONT_DISPLAY,
           }}>
-            Radio Ibiza · Rio de Janeiro para o mundo
+            Radio Ibiza · Rio de Janeiro
           </p>
         </div>
 
@@ -182,7 +166,7 @@ export default function Home() {
 
 function Logo() {
   return (
-    <svg width="56" height="56" viewBox="0 0 100 100" style={{ flexShrink: 0 }}>
+    <svg width="48" height="48" viewBox="0 0 100 100" style={{ flexShrink: 0 }}>
       <g transform="translate(50,50)">
         {[...Array(16)].map((_, i) => {
           const angle = (i / 16) * 360
