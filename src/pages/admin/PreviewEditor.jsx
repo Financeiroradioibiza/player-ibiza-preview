@@ -292,28 +292,15 @@ export default function PreviewEditor() {
         </div>
       </div>
 
-      {/* Seção: Download de playlist */}
-      {tracks.length === 0 && !isJobActive && (
-        <div className="card" style={{ marginBottom: 20 }}>
-          <h3 style={{ fontSize: 14, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--muted)', marginBottom: 12 }}>
-            2. Baixar playlist do Spotify
-          </h3>
-          <div style={{ display: 'flex', gap: 10 }}>
-            <input className="input" placeholder="https://open.spotify.com/playlist/..."
-              value={playlistUrl} onChange={(e) => setPlaylistUrl(e.target.value)}
-              style={{ flex: 1 }} />
-            <button className="btn btn-accent" onClick={startDownload} disabled={submitting}>
-              {submitting ? 'Enviando…' : 'Baixar playlist'}
-            </button>
-          </div>
-          {error && <div style={{ color: 'var(--rose)', marginTop: 10, fontSize: 14 }}>{error}</div>}
-          <p className="muted" style={{ fontSize: 12, marginTop: 10 }}>
-            Aguarde o download (em média 30s por música). Você pode fechar a página e voltar depois — o progresso fica salvo.
-          </p>
-        </div>
-      )}
+      {/* Seção: Upload manual de MP3s */}
+      <div className="card" style={{ marginBottom: 20 }}>
+        <h3 style={{ fontSize: 14, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--muted)', marginBottom: 12 }}>
+          2. Adicionar músicas
+        </h3>
+        <UploadForm previewId={id} onUploaded={load} />
+      </div>
 
-      {/* Seção: Progresso do download em andamento */}
+      {/* Seção: Progresso do download em andamento (caso ainda haja um) */}
       {isJobActive && (
         <div className="card" style={{ marginBottom: 20, background: 'rgba(34, 56, 255, 0.04)' }}>
           <h3 style={{ fontSize: 14, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--cobalt)', marginBottom: 12 }}>
@@ -470,6 +457,151 @@ function TrackRow({ track, onApprove, onReject }) {
           </>
         )}
       </div>
+    </div>
+  )
+}
+
+// ============================================================
+// Formulário de upload manual de MP3s
+// ============================================================
+function UploadForm({ previewId, onUploaded }) {
+  const [files, setFiles] = useState([])
+  const [uploading, setUploading] = useState(false)
+  const [progress, setProgress] = useState({ done: 0, total: 0, current: '' })
+  const [error, setError] = useState('')
+  const fileRef = useRef(null)
+
+  function pickFiles(e) {
+    const list = Array.from(e.target.files || [])
+    setFiles(list)
+    setError('')
+  }
+
+  async function getAudioDuration(file) {
+    return new Promise((resolve) => {
+      const audio = new Audio()
+      audio.preload = 'metadata'
+      audio.onloadedmetadata = () => resolve(Math.round(audio.duration))
+      audio.onerror = () => resolve(null)
+      audio.src = URL.createObjectURL(file)
+    })
+  }
+
+  // Tenta extrair "Artista - Título" do nome do arquivo
+  function parseFilename(name) {
+    const base = name.replace(/\.(mp3|m4a|wav|aac|ogg|flac)$/i, '')
+    const parts = base.split(' - ')
+    if (parts.length >= 2) {
+      return { artist: parts[0].trim(), title: parts.slice(1).join(' - ').trim() }
+    }
+    return { artist: 'Desconhecido', title: base.trim() }
+  }
+
+  async function uploadAll() {
+    if (files.length === 0) return
+    setError('')
+    setUploading(true)
+    setProgress({ done: 0, total: files.length, current: '' })
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i]
+        setProgress({ done: i, total: files.length, current: file.name })
+        try {
+          const { title, artist } = parseFilename(file.name)
+          const ext = file.name.split('.').pop().toLowerCase()
+          const path = `${crypto.randomUUID()}.${ext}`
+
+          const { error: upErr } = await supabase.storage
+            .from('tracks').upload(path, file, { upsert: false })
+          if (upErr) throw upErr
+
+          const duration = await getAudioDuration(file)
+          const { error: insErr } = await supabase.from('tracks').insert({
+            preview_id: previewId,
+            title,
+            artist,
+            storage_path: path,
+            duration_seconds: duration,
+            status: 'pending_review',
+            source: 'manual',
+            created_by: user.id,
+          })
+          if (insErr) throw insErr
+        } catch (e) {
+          console.error('Erro em', file.name, e)
+        }
+      }
+      setProgress({ done: files.length, total: files.length, current: '' })
+      setFiles([])
+      if (fileRef.current) fileRef.current.value = ''
+      onUploaded()
+    } catch (e) {
+      setError(e.message || 'Erro no upload')
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  return (
+    <div>
+      <div style={{
+        border: '2px dashed var(--border-strong)',
+        borderRadius: 'var(--radius-md)',
+        padding: 24,
+        textAlign: 'center',
+        background: 'var(--cream-soft)',
+      }}>
+        <input
+          ref={fileRef}
+          type="file"
+          accept="audio/*,.mp3,.m4a,.wav,.aac"
+          multiple
+          onChange={pickFiles}
+          style={{ display: 'none' }}
+          id="file-upload"
+        />
+        <label htmlFor="file-upload" style={{
+          cursor: 'pointer',
+          display: 'inline-block',
+        }}>
+          <div style={{ fontSize: 32, marginBottom: 8 }}>🎵</div>
+          <div style={{ fontSize: 15, fontWeight: 500, marginBottom: 6 }}>
+            {files.length === 0
+              ? 'Clique para escolher os arquivos MP3'
+              : `${files.length} ${files.length === 1 ? 'arquivo' : 'arquivos'} selecionado(s)`}
+          </div>
+          <div className="muted" style={{ fontSize: 12 }}>
+            Pode selecionar várias músicas de uma vez
+          </div>
+        </label>
+      </div>
+
+      {files.length > 0 && (
+        <div style={{ marginTop: 12 }}>
+          <p className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
+            <strong>Dica:</strong> nomes no formato <span className="mono">"Artista - Música.mp3"</span> são reconhecidos automaticamente. Outros viram "Desconhecido — nome do arquivo" e você pode editar depois.
+          </p>
+          <div style={{ maxHeight: 200, overflowY: 'auto', display: 'grid', gap: 4, marginBottom: 12 }}>
+            {files.map((f, i) => (
+              <div key={i} style={{ fontSize: 12, color: 'var(--muted)' }}>
+                · {f.name}
+              </div>
+            ))}
+          </div>
+          <button className="btn btn-accent" onClick={uploadAll} disabled={uploading}>
+            {uploading ? `Enviando ${progress.done}/${progress.total}…` : `Enviar ${files.length} arquivo(s)`}
+          </button>
+          {uploading && progress.current && (
+            <span className="muted" style={{ marginLeft: 12, fontSize: 12 }}>
+              {progress.current}
+            </span>
+          )}
+        </div>
+      )}
+
+      {error && <div style={{ color: 'var(--rose)', marginTop: 10, fontSize: 14 }}>{error}</div>}
     </div>
   )
 }
