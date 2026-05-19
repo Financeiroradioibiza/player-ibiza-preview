@@ -414,7 +414,7 @@ function PlayerView({ preview, feedbackMap, setFeedbackMap }) {
         background: RI.bg,
         color: RI.textPrimary,
         fontFamily: FONT_BODY,
-        padding: '32px 24px 64px',
+        padding: '20px 16px 48px',
       }}>
       <div style={{ maxWidth: 820, margin: '0 auto' }}>
         {/* Header */}
@@ -422,20 +422,20 @@ function PlayerView({ preview, feedbackMap, setFeedbackMap }) {
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'flex-start',
-          marginBottom: 40,
-          paddingBottom: 24,
+          marginBottom: 28,
+          paddingBottom: 20,
           borderBottom: `1px solid ${RI.border}`,
           flexWrap: 'wrap',
-          gap: 16,
+          gap: 12,
         }}>
           <Logo />
           <div style={{ textAlign: 'right' }}>
             <div style={{
               display: 'inline-block',
-              padding: '4px 10px',
+              padding: '3px 8px',
               background: RI.yellow,
               color: RI.bg,
-              fontSize: 10,
+              fontSize: 9,
               fontWeight: 700,
               letterSpacing: '0.15em',
               textTransform: 'uppercase',
@@ -445,47 +445,48 @@ function PlayerView({ preview, feedbackMap, setFeedbackMap }) {
             </div>
             <div style={{
               fontFamily: FONT_DISPLAY,
-              fontSize: 18,
+              fontSize: 16,
               fontWeight: 600,
               letterSpacing: '0.04em',
               textTransform: 'uppercase',
             }}>
               {preview.client_name}
             </div>
-            <div style={{ color: RI.textDim, fontSize: 11, marginTop: 4, letterSpacing: '0.05em' }}>
+            <div style={{ color: RI.textDim, fontSize: 10, marginTop: 4, letterSpacing: '0.05em' }}>
               {daysLeft > 0 ? `${daysLeft} ${daysLeft === 1 ? 'DIA RESTANTE' : 'DIAS RESTANTES'}` : 'EXPIRA HOJE'}
             </div>
           </div>
         </div>
 
         {/* Now Playing */}
-        <div style={{ marginBottom: 28 }}>
+        <div style={{ marginBottom: 24 }}>
           <div style={{
             display: 'inline-block',
-            padding: '4px 10px',
+            padding: '3px 8px',
             background: RI.pink,
             color: 'white',
-            fontSize: 10,
+            fontSize: 9,
             fontWeight: 700,
             letterSpacing: '0.15em',
             textTransform: 'uppercase',
-            marginBottom: 16,
+            marginBottom: 12,
           }}>
             TOCANDO · {String(currentIdx + 1).padStart(2, '0')} / {String(preview.tracks.length).padStart(2, '0')}
           </div>
           <div style={{
             fontFamily: FONT_DISPLAY,
-            fontSize: 'clamp(36px, 6vw, 58px)',
+            fontSize: 'clamp(28px, 8vw, 52px)',
             fontWeight: 700,
             lineHeight: 1.02,
             letterSpacing: '0.005em',
             textTransform: 'uppercase',
-            marginBottom: 8,
+            marginBottom: 6,
+            wordBreak: 'break-word',
           }}>
             {current?.title}
           </div>
           <div style={{
-            fontSize: 16,
+            fontSize: 14,
             color: RI.textMuted,
             letterSpacing: '0.02em',
           }}>
@@ -571,7 +572,7 @@ function PlayerView({ preview, feedbackMap, setFeedbackMap }) {
             activeColor={RI.yellow}
             onClick={() => setCommentOpen(!commentOpen)}
             icon="✎"
-            label={currentFb.comment ? 'Editar comentário' : 'Comentar'}
+            label={currentFb.comment ? 'Editar' : 'Comentar'}
           />
         </div>
 
@@ -793,21 +794,22 @@ function VoteBtn({ active, activeColor, onClick, icon, label }) {
       style={{
         display: 'inline-flex',
         alignItems: 'center',
-        gap: 8,
-        padding: '10px 16px',
+        gap: 6,
+        padding: '8px 12px',
         background: active ? activeColor : RI.bgCard,
         color: active ? RI.bg : RI.textPrimary,
         border: `1px solid ${active ? activeColor : RI.borderStrong}`,
-        fontSize: 12,
+        fontSize: 11,
         fontWeight: 700,
-        letterSpacing: '0.1em',
+        letterSpacing: '0.08em',
         textTransform: 'uppercase',
         cursor: 'pointer',
         transition: 'all 0.15s',
         fontFamily: 'inherit',
+        whiteSpace: 'nowrap',
       }}
     >
-      <span style={{ fontSize: 14 }}>{icon}</span>
+      <span style={{ fontSize: 13 }}>{icon}</span>
       {label}
     </button>
   )
