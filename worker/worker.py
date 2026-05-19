@@ -148,7 +148,8 @@ def download_track(title: str, artist: str, out_dir: Path) -> tuple[Path, int]:
     query = f"ytsearch1:{title} {artist} audio"
     out_template = str(out_dir / f"{uuid.uuid4()}.%(ext)s")
     opts = {
-        "format": "bestaudio/best",
+        # Aceita QUALQUER formato disponível — o postprocessor converte pra m4a depois
+        "format": "ba/b/bestaudio/best/worstaudio/worst",
         "outtmpl": out_template,
         "quiet": True,
         "no_warnings": True,
@@ -166,8 +167,12 @@ def download_track(title: str, artist: str, out_dir: Path) -> tuple[Path, int]:
                 "Chrome/124.0 Safari/537.36"
             ),
         },
+        # tv_simply é o client que sobrevive ao SABR streaming do YouTube em 2026
+        # (issues #14854, #14696, #15841 do yt-dlp confirmam)
         "extractor_args": {
-            "youtube": {"player_client": ["android", "web"]},
+            "youtube": {
+                "player_client": ["tv_simply"],
+            },
         },
     }
     if COOKIES_PATH:
