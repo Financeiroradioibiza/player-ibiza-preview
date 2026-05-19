@@ -148,18 +148,19 @@ def download_track(title: str, artist: str, out_dir: Path) -> tuple[Path, int]:
     query = f"ytsearch1:{title} {artist} audio"
     out_template = str(out_dir / f"{uuid.uuid4()}.%(ext)s")
     opts = {
-        "format": "bestaudio/best",
+        # Aceita qualquer áudio disponível, com fallback pro melhor formato existente
+        "format": "bestaudio[ext=m4a]/bestaudio/best",
         "outtmpl": out_template,
         "quiet": True,
         "no_warnings": True,
         "noplaylist": True,
+        "ignoreerrors": False,
         "postprocessors": [{
             "key": "FFmpegExtractAudio",
             "preferredcodec": "m4a",
             "preferredquality": "192",
         }],
         "default_search": "ytsearch",
-        # Headers que imitam um navegador comum
         "http_headers": {
             "User-Agent": (
                 "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -167,9 +168,12 @@ def download_track(title: str, artist: str, out_dir: Path) -> tuple[Path, int]:
                 "Chrome/124.0 Safari/537.36"
             ),
         },
-        # Usa o cliente "android" do YouTube, que sofre menos com bot detection
+        # Em 2026 o YouTube introduziu SABR streaming que quebrou os clients
+        # web/android. tv_simply e mweb ainda funcionam.
         "extractor_args": {
-            "youtube": {"player_client": ["android", "web"]},
+            "youtube": {
+                "player_client": ["tv_simply", "mweb", "ios"],
+            },
         },
     }
     if COOKIES_PATH:
