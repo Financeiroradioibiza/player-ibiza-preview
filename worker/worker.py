@@ -148,13 +148,11 @@ def download_track(title: str, artist: str, out_dir: Path) -> tuple[Path, int]:
     query = f"ytsearch1:{title} {artist} audio"
     out_template = str(out_dir / f"{uuid.uuid4()}.%(ext)s")
     opts = {
-        # Aceita qualquer áudio disponível, com fallback pro melhor formato existente
-        "format": "bestaudio[ext=m4a]/bestaudio/best",
+        "format": "bestaudio/best",
         "outtmpl": out_template,
         "quiet": True,
         "no_warnings": True,
         "noplaylist": True,
-        "ignoreerrors": False,
         "postprocessors": [{
             "key": "FFmpegExtractAudio",
             "preferredcodec": "m4a",
@@ -168,12 +166,8 @@ def download_track(title: str, artist: str, out_dir: Path) -> tuple[Path, int]:
                 "Chrome/124.0 Safari/537.36"
             ),
         },
-        # Em 2026 o YouTube introduziu SABR streaming que quebrou os clients
-        # web/android. tv_simply e mweb ainda funcionam.
         "extractor_args": {
-            "youtube": {
-                "player_client": ["tv_simply", "mweb", "ios"],
-            },
+            "youtube": {"player_client": ["android", "web"]},
         },
     }
     if COOKIES_PATH:
