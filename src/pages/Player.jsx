@@ -71,7 +71,9 @@ export default function Player() {
       setPreview(data)
       const map = {}
       ;(data.feedback || []).forEach((f) => {
-        map[f.track_id] = { vote: f.vote, comment: f.comment || '' }
+        // track_id null = feedback geral (preview embed)
+        const key = f.track_id || '_general'
+        map[key] = { vote: f.vote, comment: f.comment || '' }
       })
       setFeedbackMap(map)
       setState('playing')
@@ -95,7 +97,12 @@ export default function Player() {
       {state === 'loading' && <CenteredMessage text="CARREGANDO" />}
       {state === 'expired' && <ExpiredScreen />}
       {state === 'notfound' && <NotFoundScreen error={error} />}
-      {state === 'playing' && <PlayerView preview={preview} feedbackMap={feedbackMap} setFeedbackMap={setFeedbackMap} />}
+      {state === 'playing' && preview?.kind === 'embed' && (
+        <EmbedPlayerView preview={preview} feedbackMap={feedbackMap} setFeedbackMap={setFeedbackMap} />
+      )}
+      {state === 'playing' && preview?.kind !== 'embed' && (
+        <PlayerView preview={preview} feedbackMap={feedbackMap} setFeedbackMap={setFeedbackMap} />
+      )}
     </>
   )
 }
@@ -823,3 +830,229 @@ function Bar({ delay }) {
     animationDelay: `${delay}s`,
   }} />
 }
+
+// ============================================================
+// Player Embed do Spotify — usa o iframe oficial do Spotify
+// com a nossa identidade Radio Ibiza ao redor
+// ============================================================
+function EmbedPlayerView({ preview, feedbackMap, setFeedbackMap }) {
+  const [comment, setComment] = useState(feedbackMap?._general?.comment || '')
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const sessionId = getSessionId()
+
+  const expiresAt = new Date(preview.expires_at)
+  const daysLeft = Math.ceil((expiresAt - new Date()) / 86400000)
+
+  async function saveComment() {
+    setSaving(true)
+    try {
+      await supabase.functions.invoke('save-feedback', {
+        body: {
+          preview_id: preview.preview_id,
+          track_id: null,
+          session_id: sessionId,
+          vote: null,
+          comment: comment.trim(),
+        },
+      })
+      setFeedbackMap((m) => ({ ...m, _general: { vote: null, comment: comment.trim() } }))
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2500)
+    } catch (e) {
+      console.error('Erro salvando comentário', e)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div style={{
+      minHeight: '100vh',
+      background: RI.bg,
+      color: RI.textPrimary,
+      fontFamily: FONT_BODY,
+      padding: '20px 16px 48px',
+    }}>
+      <div style={{ maxWidth: 720, margin: '0 auto' }}>
+        {/* Header */}
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'flex-start',
+          marginBottom: 28,
+          paddingBottom: 20,
+          borderBottom: `1px solid ${RI.border}`,
+          flexWrap: 'wrap',
+          gap: 12,
+        }}>
+          <Logo />
+          <div style={{ textAlign: 'right' }}>
+            <div style={{
+              display: 'inline-block',
+              padding: '3px 8px',
+              background: RI.yellow,
+              color: RI.bg,
+              fontSize: 9,
+              fontWeight: 700,
+              letterSpacing: '0.15em',
+              textTransform: 'uppercase',
+              marginBottom: 6,
+            }}>
+              CLIENTE
+            </div>
+            <div style={{
+              fontFamily: FONT_DISPLAY,
+              fontSize: 16,
+              fontWeight: 600,
+              letterSpacing: '0.04em',
+              textTransform: 'uppercase',
+            }}>
+              {preview.client_name}
+            </div>
+            <div style={{ color: RI.textDim, fontSize: 10, marginTop: 4, letterSpacing: '0.05em' }}>
+              {daysLeft > 0 ? `${daysLeft} ${daysLeft === 1 ? 'DIA RESTANTE' : 'DIAS RESTANTES'}` : 'EXPIRA HOJE'}
+            </div>
+          </div>
+        </div>
+
+        {/* Título */}
+        <div style={{ marginBottom: 20 }}>
+          <div style={{
+            display: 'inline-block',
+            padding: '3px 8px',
+            background: '#1DB954',
+            color: 'white',
+            fontSize: 9,
+            fontWeight: 700,
+            letterSpacing: '0.15em',
+            textTransform: 'uppercase',
+            marginBottom: 12,
+          }}>
+            ✦ PREVIEW VIA SPOTIFY
+          </div>
+          <div style={{
+            fontFamily: FONT_DISPLAY,
+            fontSize: 'clamp(28px, 8vw, 48px)',
+            fontWeight: 700,
+            lineHeight: 1.02,
+            letterSpacing: '0.005em',
+            textTransform: 'uppercase',
+            marginBottom: 10,
+          }}>
+            SUA <span style={{ color: RI.pink }}>IDENTIDADE</span><br />MUSICAL
+          </div>
+          <p style={{ color: RI.textMuted, fontSize: 14, lineHeight: 1.5 }}>
+            Aperte play no player abaixo. Se você tiver Spotify Premium, ouve a playlist completa. Caso contrário, ouve 30s de cada música.
+          </p>
+        </div>
+
+        {/* Embed do Spotify */}
+        {preview.spotify_embed_url && (
+          <div style={{
+            marginBottom: 32,
+            borderRadius: 12,
+            overflow: 'hidden',
+            background: '#000',
+          }}>
+            <iframe
+              src={preview.spotify_embed_url}
+              width="100%"
+              height="380"
+              frameBorder="0"
+              allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
+              loading="lazy"
+              style={{ display: 'block' }}
+            />
+          </div>
+        )}
+
+        {/* Campo de comentário geral */}
+        <div style={{
+          background: RI.bgCard,
+          border: `1px solid ${RI.borderStrong}`,
+          padding: 18,
+          marginBottom: 28,
+        }}>
+          <div style={{
+            fontFamily: FONT_DISPLAY,
+            fontSize: 11,
+            fontWeight: 700,
+            letterSpacing: '0.25em',
+            color: RI.textDim,
+            marginBottom: 12,
+            textTransform: 'uppercase',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+          }}>
+            <span style={{
+              display: 'inline-block',
+              width: 16, height: 2, background: RI.yellow,
+            }} />
+            DEIXE SEU COMENTÁRIO
+          </div>
+          <textarea
+            value={comment}
+            onChange={(e) => setComment(e.target.value)}
+            placeholder="O que achou dessa identidade musical? Conta pra gente o que sentiu, o que gostou, o que poderia ser diferente…"
+            rows={5}
+            style={{
+              width: '100%',
+              background: 'transparent',
+              color: RI.textPrimary,
+              border: 'none',
+              outline: 'none',
+              resize: 'vertical',
+              fontSize: 14,
+              fontFamily: 'inherit',
+              lineHeight: 1.6,
+              minHeight: 100,
+            }}
+          />
+          <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 10, marginTop: 12 }}>
+            {saved && (
+              <span style={{ color: RI.yellow, fontSize: 12, letterSpacing: '0.05em' }}>
+                ✓ Comentário salvo
+              </span>
+            )}
+            <button
+              onClick={saveComment}
+              disabled={saving || !comment.trim()}
+              style={{
+                padding: '10px 20px',
+                background: RI.yellow,
+                color: RI.bg,
+                border: 'none',
+                fontSize: 12,
+                fontWeight: 700,
+                letterSpacing: '0.12em',
+                textTransform: 'uppercase',
+                cursor: saving || !comment.trim() ? 'not-allowed' : 'pointer',
+                opacity: saving || !comment.trim() ? 0.5 : 1,
+                fontFamily: 'inherit',
+              }}
+            >
+              {saving ? 'Salvando…' : 'Salvar comentário'}
+            </button>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div style={{
+          paddingTop: 24,
+          borderTop: `1px solid ${RI.border}`,
+          textAlign: 'center',
+          fontSize: 10,
+          letterSpacing: '0.2em',
+          color: RI.textDim,
+          textTransform: 'uppercase',
+          fontFamily: FONT_DISPLAY,
+        }}>
+          Radio Ibiza · Identidade Musical · Preview expira em {expiresAt.toLocaleDateString('pt-BR')}
+        </div>
+      </div>
+    </div>
+  )
+}
+
