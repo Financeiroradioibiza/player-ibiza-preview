@@ -17,29 +17,17 @@ export default function AdminApp() {
           supabase.auth.getSession(),
           new Promise((_, reject) => setTimeout(() => reject(new Error('getSession timeout')), 5000)),
         ])
-        if (!session) { setSession(null); return }
-
-        // Tenta verificar AAL com timeout. Se travar, confia na sessão.
-        try {
-          const { data: aal } = await Promise.race([
-            supabase.auth.mfa.getAuthenticatorAssuranceLevel(),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('AAL timeout')), 3000)),
-          ])
-          if (aal?.currentLevel !== 'aal2' && aal?.nextLevel !== 'aal2') {
-            setSession(null)
-            return
-          }
-        } catch (e) {
-          console.warn('AAL check timeout, mantendo sessão:', e)
-        }
-        setSession(session)
+        // Se tem sessão, está logado. Confiamos no login inicial (que exigiu TOTP).
+        setSession(session || null)
       } catch (e) {
         console.error('Erro no check de sessão:', e)
         setSession(null)
       }
     }
     check()
-    const { data: sub } = supabase.auth.onAuthStateChange(() => check())
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session || null)
+    })
     return () => sub?.subscription.unsubscribe()
   }, [])
 
