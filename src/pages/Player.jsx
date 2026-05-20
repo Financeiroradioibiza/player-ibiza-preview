@@ -953,14 +953,14 @@ function EmbedPlayerView({ preview, feedbackMap, setFeedbackMap }) {
             SUA <span style={{ color: RI.pink }}>IDENTIDADE</span><br />MUSICAL
           </div>
           <p style={{ color: RI.textMuted, fontSize: 14, lineHeight: 1.5 }}>
-            Aperte play no player abaixo. Se você tiver Spotify Premium, ouve a playlist completa. Caso contrário, ouve 30s de cada música.
+            Aperte play no player abaixo pra ouvir um trecho de cada música.
           </p>
         </div>
 
         {/* Embed do Spotify */}
         {preview.spotify_embed_url && (
           <div style={{
-            marginBottom: 32,
+            marginBottom: 16,
             borderRadius: 12,
             overflow: 'hidden',
             background: '#000',
@@ -976,6 +976,48 @@ function EmbedPlayerView({ preview, feedbackMap, setFeedbackMap }) {
             />
           </div>
         )}
+
+        {/* Dica pra quem tem Premium */}
+        <details style={{
+          marginBottom: 28,
+          background: 'rgba(29, 185, 84, 0.08)',
+          border: `1px solid rgba(29, 185, 84, 0.3)`,
+          borderRadius: 8,
+          padding: '12px 16px',
+        }}>
+          <summary style={{
+            cursor: 'pointer',
+            color: '#1DB954',
+            fontSize: 12,
+            fontWeight: 600,
+            letterSpacing: '0.05em',
+            textTransform: 'uppercase',
+            userSelect: 'none',
+          }}>
+            ✦ Quer ouvir as músicas completas?
+          </summary>
+          <div style={{
+            marginTop: 12,
+            color: RI.textMuted,
+            fontSize: 13,
+            lineHeight: 1.6,
+          }}>
+            <p style={{ marginBottom: 10 }}>
+              Se você tem <strong style={{ color: RI.textPrimary }}>Spotify Premium</strong>, é só fazer login no Spotify no mesmo navegador que está aberto agora. Em poucos passos:
+            </p>
+            <ol style={{ paddingLeft: 20, marginBottom: 10 }}>
+              <li style={{ marginBottom: 6 }}>
+                Em outra aba, abre <a href="https://open.spotify.com" target="_blank" rel="noopener" style={{ color: RI.yellow, textDecoration: 'underline' }}>open.spotify.com</a>
+              </li>
+              <li style={{ marginBottom: 6 }}>Faz login com sua conta Premium</li>
+              <li style={{ marginBottom: 6 }}>Volta aqui e atualiza a página</li>
+              <li>Aperta play — agora toca a música completa 🎵</li>
+            </ol>
+            <p style={{ fontSize: 12, color: RI.textDim, marginTop: 8 }}>
+              Sem Premium, o player toca um trecho de cada música — suficiente pra sentir a vibe.
+            </p>
+          </div>
+        </details>
 
         {/* Campo de comentário geral */}
         <div style={{
