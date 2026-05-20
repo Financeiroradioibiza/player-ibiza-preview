@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from 'react'
 import { useNavigate, useParams, Link } from 'react-router-dom'
+import { createClient } from '@supabase/supabase-js'
 import { supabase, generateCode } from '../../lib/supabase.js'
 
 export default function PreviewEditor() {
@@ -841,31 +842,66 @@ function UploadForm({ previewId, onUploaded }) {
       })
     }
 
+    // Pega a sessão atual do localStorage e cria um cliente Supabase NOVO,
+    // independente do principal (que pode estar travado).
+    // É como abrir a página de novo, mas invisível.
+    let freshClient = null
+    let user = null
     try {
-      log('Buscando usuário...')
-      let userData = null
-      // Tenta 3 vezes com timeouts maiores
-      for (let attempt = 1; attempt <= 3; attempt++) {
-        try {
-          const userResult = await Promise.race([
-            supabase.auth.getUser(),
-            new Promise((_, reject) => setTimeout(() => reject(new Error(`Timeout ${attempt * 8}s`)), attempt * 8000)),
-          ])
-          userData = userResult.data?.user
-          if (userData) break
-          log(`Tentativa ${attempt}: getUser retornou null`)
-        } catch (e) {
-          log(`Tentativa ${attempt} falhou: ${e.message}`)
-          if (attempt === 3) throw e
-          await new Promise(r => setTimeout(r, 1000))
-        }
-      }
-      log(`User: ${userData?.id || 'NULL'}`)
-      if (!userData) {
-        throw new Error('Não foi possível obter o usuário. Recarregue a página e tente novamente.')
-      }
-      const user = userData
+      log('Criando conexão fresca...')
+      const url = import.meta.env.VITE_SUPABASE_URL
+      const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 
+      // Pega o access_token e user diretamente do localStorage
+      const keys = Object.keys(localStorage).filter(k => k.startsWith('sb-') && k.endsWith('-auth-token'))
+      let accessToken = null
+      let refreshToken = null
+      for (const key of keys) {
+        const raw = localStorage.getItem(key)
+        if (!raw) continue
+        try {
+          const parsed = JSON.parse(raw)
+          if (parsed?.user?.id) {
+            user = parsed.user
+            accessToken = parsed.access_token
+            refreshToken = parsed.refresh_token
+            break
+          }
+        } catch {}
+      }
+
+      if (!user || !accessToken) {
+        throw new Error('Sessão não encontrada. Recarregue a página e faça login novamente.')
+      }
+      log(`User encontrado: ${user.id.slice(0, 8)}...`)
+
+      // Cria cliente novo SEM persistência (não interfere com a sessão principal)
+      freshClient = createClient(url, anonKey, {
+        auth: {
+          persistSession: false,
+          autoRefreshToken: false,
+        },
+        global: {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+        },
+      })
+
+      // Seta a sessão no cliente novo
+      await freshClient.auth.setSession({
+        access_token: accessToken,
+        refresh_token: refreshToken,
+      })
+      log('Conexão fresca pronta')
+    } catch (e) {
+      log(`ERRO ao criar conexão: ${e.message}`)
+      setError(e.message || 'Erro ao preparar upload')
+      setUploading(false)
+      return
+    }
+
+    try {
       for (let i = 0; i < files.length; i++) {
         const file = files[i]
         log(`Arquivo ${i + 1}/${files.length}: ${file.name} (${(file.size / 1024 / 1024).toFixed(1)}MB)`)
@@ -882,7 +918,7 @@ function UploadForm({ previewId, onUploaded }) {
           updateStatus(i, { stage: 'uploading' })
           log(`  Subindo storage: ${path}`)
           const blob = new Blob([file], { type: file.type || 'audio/mpeg' })
-          const { error: upErr } = await supabase.storage
+          const { error: upErr } = await freshClient.storage
             .from('tracks').upload(path, blob, {
               upsert: false,
               contentType: file.type || 'audio/mpeg',
@@ -899,7 +935,7 @@ function UploadForm({ previewId, onUploaded }) {
           log(`  Duração: ${duration}s`)
 
           log(`  Salvando no banco...`)
-          const { error: insErr } = await supabase.from('tracks').insert({
+          const { error: insErr } = await freshClient.from('tracks').insert({
             preview_id: previewId,
             title,
             artist,
@@ -914,8 +950,6 @@ function UploadForm({ previewId, onUploaded }) {
             throw insErr
           }
           log(`  ✓ Concluído`)
-          updateStatus(i, { stage: 'done' })
-
           updateStatus(i, { stage: 'done' })
         } catch (e) {
           console.error('Erro em', file.name, e)
