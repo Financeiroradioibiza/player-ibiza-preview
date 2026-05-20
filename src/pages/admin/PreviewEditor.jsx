@@ -843,14 +843,26 @@ function UploadForm({ previewId, onUploaded }) {
 
     try {
       log('Buscando usuário...')
-      const userResult = await Promise.race([
-        supabase.auth.getUser(),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout getUser (5s)')), 5000)),
-      ])
-      const userData = userResult.data?.user
+      let userData = null
+      // Tenta 3 vezes com timeouts maiores
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          const userResult = await Promise.race([
+            supabase.auth.getUser(),
+            new Promise((_, reject) => setTimeout(() => reject(new Error(`Timeout ${attempt * 8}s`)), attempt * 8000)),
+          ])
+          userData = userResult.data?.user
+          if (userData) break
+          log(`Tentativa ${attempt}: getUser retornou null`)
+        } catch (e) {
+          log(`Tentativa ${attempt} falhou: ${e.message}`)
+          if (attempt === 3) throw e
+          await new Promise(r => setTimeout(r, 1000))
+        }
+      }
       log(`User: ${userData?.id || 'NULL'}`)
       if (!userData) {
-        throw new Error('Sessão expirou. Recarregue a página e faça login novamente.')
+        throw new Error('Não foi possível obter o usuário. Recarregue a página e tente novamente.')
       }
       const user = userData
 
