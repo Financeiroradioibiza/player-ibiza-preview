@@ -16,6 +16,14 @@ export default function AdminLogin() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
+  const [debugLog, setDebugLog] = useState([])
+
+  function log(msg) {
+    const ts = new Date().toLocaleTimeString('pt-BR')
+    setDebugLog((prev) => [...prev, `[${ts}] ${msg}`])
+    console.log('[login]', msg)
+  }
+
   useEffect(() => {
     // Se já tem sessão completa (AAL2 com TOTP), pula direto
     checkSession()
@@ -33,37 +41,53 @@ export default function AdminLogin() {
   async function handleCredentials(e) {
     e.preventDefault()
     setError('')
+    setDebugLog([])
     setLoading(true)
+    log('Iniciando login...')
     try {
-      const { error: signErr } = await supabase.auth.signInWithPassword({ email, password })
+      log('Chamando signInWithPassword...')
+      const { error: signErr } = await Promise.race([
+        supabase.auth.signInWithPassword({ email, password }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout no signInWithPassword (15s)')), 15000)),
+      ])
       if (signErr) throw signErr
+      log('Login com senha OK')
 
-      // Verifica se já tem TOTP configurado
-      const { data: factors } = await supabase.auth.mfa.listFactors()
+      log('Listando fatores MFA...')
+      const { data: factors, error: lfErr } = await Promise.race([
+        supabase.auth.mfa.listFactors(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout em listFactors (10s)')), 10000)),
+      ])
+      if (lfErr) throw lfErr
+      log(`Fatores: ${JSON.stringify(factors?.totp?.length || 0)} TOTP encontrados`)
+
       const verifiedTotp = factors?.totp?.find((f) => f.status === 'verified')
 
       if (verifiedTotp) {
-        // Já tem MFA — pedir código
+        log('TOTP já configurado, criando challenge...')
         const { data: challenge, error: chErr } = await supabase.auth.mfa.challenge({
           factorId: verifiedTotp.id,
         })
         if (chErr) throw chErr
+        log('Challenge criado, indo pra tela TOTP')
         setFactorId(verifiedTotp.id)
         setChallengeId(challenge.id)
         setStep('totp')
       } else {
-        // Primeiro login — configurar TOTP agora
+        log('Sem TOTP, iniciando enroll...')
         const { data: enroll, error: enErr } = await supabase.auth.mfa.enroll({
           factorType: 'totp',
           friendlyName: 'Radio Ibiza Admin',
         })
         if (enErr) throw enErr
+        log('Enroll OK')
         setEnrollFactorId(enroll.id)
         setEnrollQR(enroll.totp.qr_code)
         setEnrollSecret(enroll.totp.secret)
         setStep('enrolling')
       }
     } catch (err) {
+      log(`ERRO: ${err.message || err}`)
       setError(err.message || 'Falha ao entrar')
     } finally {
       setLoading(false)
@@ -210,6 +234,30 @@ export default function AdminLogin() {
                 {loading ? 'Confirmando...' : 'Confirmar e entrar'}
               </button>
             </form>
+          )}
+
+          {/* Debug do login */}
+          {debugLog.length > 0 && (
+            <details open style={{
+              marginTop: 16,
+              background: '#1a1a1a',
+              color: '#22c55e',
+              fontFamily: 'monospace',
+              fontSize: 11,
+              padding: 10,
+              borderRadius: 4,
+              maxHeight: 280,
+              overflow: 'auto',
+            }}>
+              <summary style={{ color: '#fff', cursor: 'pointer', fontWeight: 600, marginBottom: 8 }}>
+                🐞 Debug do login
+              </summary>
+              {debugLog.map((line, i) => (
+                <div key={i} style={{ padding: '2px 0', borderBottom: '1px solid #333', wordBreak: 'break-all' }}>
+                  {line}
+                </div>
+              ))}
+            </details>
           )}
         </div>
       </div>
