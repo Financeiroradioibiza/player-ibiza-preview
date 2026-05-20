@@ -689,21 +689,46 @@ function UploadForm({ previewId, onUploaded }) {
   const [files, setFiles] = useState([])
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState('')
+  const [debugLog, setDebugLog] = useState([])
   const fileRef = useRef(null)
+
+  function log(msg) {
+    const ts = new Date().toLocaleTimeString('pt-BR') + '.' + String(Date.now() % 1000).padStart(3, '0')
+    setDebugLog((prev) => [...prev, `[${ts}] ${msg}`])
+    console.log('[upload]', msg)
+  }
 
   function pickFiles(e) {
     const list = Array.from(e.target.files || [])
     setFiles(list)
     setError('')
+    setDebugLog([])
   }
 
   async function getAudioDuration(file) {
     return new Promise((resolve) => {
       const audio = new Audio()
+      let url = null
+      const timeout = setTimeout(() => {
+        console.warn('getAudioDuration timeout para', file.name)
+        if (url) URL.revokeObjectURL(url)
+        resolve(null)
+      }, 5000)
+
       audio.preload = 'metadata'
-      audio.onloadedmetadata = () => resolve(Math.round(audio.duration))
-      audio.onerror = () => resolve(null)
-      audio.src = URL.createObjectURL(file)
+      audio.onloadedmetadata = () => {
+        clearTimeout(timeout)
+        const d = Math.round(audio.duration)
+        if (url) URL.revokeObjectURL(url)
+        resolve(isFinite(d) ? d : null)
+      }
+      audio.onerror = () => {
+        clearTimeout(timeout)
+        if (url) URL.revokeObjectURL(url)
+        resolve(null)
+      }
+      url = URL.createObjectURL(file)
+      audio.src = url
     })
   }
 
@@ -795,16 +820,18 @@ function UploadForm({ previewId, onUploaded }) {
 
   async function uploadAll() {
     if (files.length === 0) return
+    setDebugLog([])
+    log(`Iniciando upload de ${files.length} arquivo(s)`)
     setError('')
     setUploading(true)
 
-    // Inicializa o status de cada arquivo
     const initial = files.map((f) => ({
       name: f.name,
-      stage: 'queued', // queued | reading | uploading | saving | done | failed
+      stage: 'queued',
       error: null,
     }))
     setFileStatuses(initial)
+    log('Status inicializado')
 
     const updateStatus = (idx, patch) => {
       setFileStatuses((prev) => {
@@ -815,13 +842,14 @@ function UploadForm({ previewId, onUploaded }) {
     }
 
     try {
-      // Renova a sessão antes de tudo (evita 400 se o token tiver expirado)
+      log('Renovando sessão...')
       const { data: refreshed, error: refreshErr } = await supabase.auth.refreshSession()
-      if (refreshErr) {
-        // Se falhar renovar, tenta pegar o user atual mesmo assim
-        console.warn('Falha ao renovar sessão:', refreshErr)
-      }
-      const userData = refreshed?.user || (await supabase.auth.getUser()).data?.user
+      if (refreshErr) log(`AVISO: erro refresh: ${refreshErr.message}`)
+      log('Sessão renovada (ou tentativa feita)')
+
+      const userResult = await supabase.auth.getUser()
+      const userData = refreshed?.user || userResult.data?.user
+      log(`User: ${userData?.id || 'NULL'}`)
       if (!userData) {
         throw new Error('Sessão expirou. Faça login novamente.')
       }
@@ -829,26 +857,37 @@ function UploadForm({ previewId, onUploaded }) {
 
       for (let i = 0; i < files.length; i++) {
         const file = files[i]
+        log(`Arquivo ${i + 1}/${files.length}: ${file.name} (${(file.size / 1024 / 1024).toFixed(1)}MB)`)
         try {
           updateStatus(i, { stage: 'reading' })
+          log(`  Lendo metadata...`)
           const { title, artist } = await extractMetadata(file)
+          log(`  Metadata: ${title} — ${artist}`)
+
           const ext = file.name.split('.').pop().toLowerCase()
           const safeExt = /^[a-z0-9]{1,5}$/.test(ext) ? ext : 'mp3'
           const path = `${crypto.randomUUID()}.${safeExt}`
 
           updateStatus(i, { stage: 'uploading' })
-          // Cria um Blob "limpo" sem o nome original (evita issues com caracteres
-          // especiais no Supabase Storage como [ ] ( ) etc)
+          log(`  Subindo storage: ${path}`)
           const blob = new Blob([file], { type: file.type || 'audio/mpeg' })
           const { error: upErr } = await supabase.storage
             .from('tracks').upload(path, blob, {
               upsert: false,
               contentType: file.type || 'audio/mpeg',
             })
-          if (upErr) throw upErr
+          if (upErr) {
+            log(`  ERRO storage: ${upErr.message || JSON.stringify(upErr)}`)
+            throw upErr
+          }
+          log(`  Storage OK`)
 
           updateStatus(i, { stage: 'saving' })
+          log(`  Obtendo duração...`)
           const duration = await getAudioDuration(file)
+          log(`  Duração: ${duration}s`)
+
+          log(`  Salvando no banco...`)
           const { error: insErr } = await supabase.from('tracks').insert({
             preview_id: previewId,
             title,
@@ -859,7 +898,12 @@ function UploadForm({ previewId, onUploaded }) {
             source: 'manual',
             created_by: user.id,
           })
-          if (insErr) throw insErr
+          if (insErr) {
+            log(`  ERRO banco: ${insErr.message || JSON.stringify(insErr)}`)
+            throw insErr
+          }
+          log(`  ✓ Concluído`)
+          updateStatus(i, { stage: 'done' })
 
           updateStatus(i, { stage: 'done' })
         } catch (e) {
@@ -994,6 +1038,35 @@ function UploadForm({ previewId, onUploaded }) {
               : `Enviar ${files.length} arquivo(s)`}
           </button>
         </div>
+      )}
+
+      {/* Painel de debug do upload */}
+      {debugLog.length > 0 && (
+        <details open style={{
+          marginTop: 16,
+          background: '#1a1a1a',
+          color: '#22c55e',
+          fontFamily: 'monospace',
+          fontSize: 11,
+          padding: 10,
+          borderRadius: 4,
+          maxHeight: 320,
+          overflow: 'auto',
+        }}>
+          <summary style={{ color: '#fff', cursor: 'pointer', fontWeight: 600, marginBottom: 8 }}>
+            🐞 Debug do upload ({debugLog.length} eventos)
+          </summary>
+          {debugLog.map((line, i) => (
+            <div key={i} style={{
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-all',
+              padding: '2px 0',
+              borderBottom: '1px solid #333',
+            }}>
+              {line}
+            </div>
+          ))}
+        </details>
       )}
 
       {error && <div style={{ color: 'var(--rose)', marginTop: 10, fontSize: 14 }}>{error}</div>}
