@@ -717,6 +717,7 @@ function UploadForm({ previewId, onUploaded }) {
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState('')
   const [debugLog, setDebugLog] = useState([])
+  const [needsReload, setNeedsReload] = useState(false)
   const fileRef = useRef(null)
 
   function log(msg) {
@@ -984,11 +985,22 @@ function UploadForm({ previewId, onUploaded }) {
         }
       }
 
-      // Espera um pouco mostrar tudo concluído, então recarrega a página
-      // (forma mais confiável de mostrar o estado atualizado)
-      log('Recarregando página em 1.5s...')
-      setTimeout(() => {
-        window.location.reload()
+      // Espera mostrar resultado e tenta atualizar a lista
+      log('Atualizando lista...')
+      setTimeout(async () => {
+        setFiles([])
+        if (fileRef.current) fileRef.current.value = ''
+        setFileStatuses([])
+        try {
+          await Promise.race([
+            Promise.resolve(onUploaded()),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout no reload')), 5000)),
+          ])
+          log('✓ Lista atualizada')
+        } catch (e) {
+          log(`Atualização travou: ${e.message}. Clique em "Recarregar" abaixo.`)
+          setNeedsReload(true)
+        }
       }, 1500)
     } catch (e) {
       const msg = e?.message || String(e)
@@ -1106,6 +1118,25 @@ function UploadForm({ previewId, onUploaded }) {
             {uploading
               ? `Enviando… (${fileStatuses.filter(s => s.stage === 'done').length}/${files.length})`
               : `Enviar ${files.length} arquivo(s)`}
+          </button>
+        </div>
+      )}
+
+      {needsReload && (
+        <div style={{
+          marginTop: 12, padding: 14,
+          background: 'rgba(255, 154, 60, 0.15)',
+          border: '1px solid var(--amber-deep)',
+          borderRadius: 'var(--radius-sm)',
+        }}>
+          <p style={{ fontSize: 13, marginBottom: 10 }}>
+            ✓ Upload concluído. A página precisa ser recarregada para mostrar as músicas.
+          </p>
+          <button
+            className="btn btn-accent"
+            onClick={() => window.location.reload()}
+          >
+            🔄 Recarregar página
           </button>
         </div>
       )}
