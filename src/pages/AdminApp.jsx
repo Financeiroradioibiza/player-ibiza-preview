@@ -12,25 +12,30 @@ export default function AdminApp() {
 
   useEffect(() => {
     async function check() {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) { setSession(null); return }
-      // Verifica AAL pra confirmar que tem 2FA
       try {
-        const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel()
-        // currentLevel pode ser aal1 logo após refresh; o que importa é nextLevel
-        // Se nextLevel for aal2, significa que tem MFA configurado e já autenticou
-        // Se o currentLevel for aal1 mas nextLevel for aal1 também, não tem MFA — bloqueia
-        if (aal?.currentLevel === 'aal2' || aal?.nextLevel === 'aal2') {
-          setSession(session)
-          return
+        const { data: { session } } = await Promise.race([
+          supabase.auth.getSession(),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('getSession timeout')), 5000)),
+        ])
+        if (!session) { setSession(null); return }
+
+        // Tenta verificar AAL com timeout. Se travar, confia na sessão.
+        try {
+          const { data: aal } = await Promise.race([
+            supabase.auth.mfa.getAuthenticatorAssuranceLevel(),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('AAL timeout')), 3000)),
+          ])
+          if (aal?.currentLevel !== 'aal2' && aal?.nextLevel !== 'aal2') {
+            setSession(null)
+            return
+          }
+        } catch (e) {
+          console.warn('AAL check timeout, mantendo sessão:', e)
         }
-        // Sem MFA — não permite acesso
-        setSession(null)
-      } catch (e) {
-        // Se der erro na verificação, usa a session como fallback
-        // (preferimos manter logado a deslogar por erro de rede)
-        console.warn('Erro verificando MFA, mantendo sessão:', e)
         setSession(session)
+      } catch (e) {
+        console.error('Erro no check de sessão:', e)
+        setSession(null)
       }
     }
     check()
