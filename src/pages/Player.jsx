@@ -835,6 +835,16 @@ function Bar({ delay }) {
 // Player Embed do Spotify — usa o iframe oficial do Spotify
 // com a nossa identidade Radio Ibiza ao redor
 // ============================================================
+
+// Converte URL do Spotify pra formato /embed/ (caso já não esteja)
+function toEmbedUrl(url) {
+  if (!url) return null
+  if (url.includes('/embed/')) return url
+  const m = url.match(/spotify\.com\/(playlist|album|track|episode|show)\/([a-zA-Z0-9]+)/)
+  if (!m) return null
+  return `https://open.spotify.com/embed/${m[1]}/${m[2]}`
+}
+
 function EmbedPlayerView({ preview, feedbackMap, setFeedbackMap }) {
   const [comment, setComment] = useState(feedbackMap?._general?.comment || '')
   const [saving, setSaving] = useState(false)
@@ -956,7 +966,7 @@ function EmbedPlayerView({ preview, feedbackMap, setFeedbackMap }) {
             background: '#000',
           }}>
             <iframe
-              src={preview.spotify_embed_url}
+              src={toEmbedUrl(preview.spotify_embed_url)}
               width="100%"
               height="380"
               frameBorder="0"
