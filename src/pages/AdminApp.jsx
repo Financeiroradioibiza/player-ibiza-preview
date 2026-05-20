@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase.js'
 
 import PreviewsList from './admin/PreviewsList.jsx'
 import PreviewEditor from './admin/PreviewEditor.jsx'
+import PreviewEmbedEditor from './admin/PreviewEmbedEditor.jsx'
 import PreviewDetail from './admin/PreviewDetail.jsx'
 
 export default function AdminApp() {
@@ -68,7 +69,9 @@ export default function AdminApp() {
         <Routes>
           <Route index element={<PreviewsList />} />
           <Route path="previews/new" element={<PreviewEditor />} />
+          <Route path="previews/new-embed" element={<PreviewEmbedEditor />} />
           <Route path="previews/:id/edit" element={<PreviewEditor />} />
+          <Route path="previews/:id/edit-embed" element={<PreviewEmbedEditor />} />
           <Route path="previews/:id" element={<PreviewDetail />} />
         </Routes>
       </main>
