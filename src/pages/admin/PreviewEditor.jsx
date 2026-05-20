@@ -36,8 +36,34 @@ export default function PreviewEditor() {
     }
   }, [id])
 
+  // Cria um cliente Supabase fresh com a sessão atual.
+  // Útil pra evitar locks do cliente principal depois de operações pesadas.
+  function createFreshClient() {
+    const url = import.meta.env.VITE_SUPABASE_URL
+    const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+    const keys = Object.keys(localStorage).filter(k => k.startsWith('sb-') && k.endsWith('-auth-token'))
+    let accessToken = null
+    for (const key of keys) {
+      try {
+        const raw = localStorage.getItem(key)
+        if (!raw) continue
+        const parsed = JSON.parse(raw)
+        if (parsed?.access_token) {
+          accessToken = parsed.access_token
+          break
+        }
+      } catch {}
+    }
+    return createClient(url, anonKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+      global: accessToken ? { headers: { Authorization: `Bearer ${accessToken}` } } : {},
+    })
+  }
+
   async function load() {
-    const { data: p } = await supabase
+    // Usa cliente fresh pra evitar travamentos
+    const sb = createFreshClient()
+    const { data: p } = await sb
       .from('previews')
       .select('*')
       .eq('id', id)
@@ -48,7 +74,7 @@ export default function PreviewEditor() {
       setDays(p.days_valid)
     }
 
-    const { data: t } = await supabase
+    const { data: t } = await sb
       .from('tracks')
       .select('*')
       .eq('preview_id', id)
@@ -56,7 +82,7 @@ export default function PreviewEditor() {
       .order('created_at')
     setTracks(t || [])
 
-    const { data: jobs } = await supabase
+    const { data: jobs } = await sb
       .from('download_jobs')
       .select('*')
       .eq('preview_id', id)
@@ -66,7 +92,7 @@ export default function PreviewEditor() {
     setJob(j || null)
 
     if (j) {
-      const { data: items } = await supabase
+      const { data: items } = await sb
         .from('download_job_items')
         .select('*')
         .eq('job_id', j.id)
@@ -958,12 +984,11 @@ function UploadForm({ previewId, onUploaded }) {
         }
       }
 
-      // Aguarda um pouco pra mostrar o resultado, depois limpa
+      // Espera um pouco mostrar tudo concluído, então recarrega a página
+      // (forma mais confiável de mostrar o estado atualizado)
+      log('Recarregando página em 1.5s...')
       setTimeout(() => {
-        setFiles([])
-        if (fileRef.current) fileRef.current.value = ''
-        setFileStatuses([])
-        onUploaded()
+        window.location.reload()
       }, 1500)
     } catch (e) {
       const msg = e?.message || String(e)
