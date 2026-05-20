@@ -71,6 +71,13 @@ export default function PreviewEmbedEditor() {
       const code = generateCode()
       const expiresAt = new Date(Date.now() + (days || 7) * 86400000).toISOString()
 
+      const finalEmbedUrl = toEmbedUrl(spotifyUrl)
+      if (!finalEmbedUrl) {
+        setError('URL inválida do Spotify')
+        setSubmitting(false)
+        return
+      }
+
       if (id) {
         // Atualizar existente
         const { error: updErr } = await supabase
@@ -78,7 +85,7 @@ export default function PreviewEmbedEditor() {
           .update({
             client_name: clientName.trim(),
             days_valid: days,
-            spotify_embed_url: spotifyUrl.trim(),
+            spotify_embed_url: finalEmbedUrl,
             status: 'active',
             code: preview.code || code,
             expires_at: preview.expires_at || expiresAt,
@@ -95,7 +102,7 @@ export default function PreviewEmbedEditor() {
             days_valid: days,
             status: 'active',
             kind: 'embed',
-            spotify_embed_url: spotifyUrl.trim(),
+            spotify_embed_url: finalEmbedUrl,
             code,
             expires_at: expiresAt,
             created_by: user.id,
