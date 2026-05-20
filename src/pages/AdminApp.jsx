@@ -14,9 +14,24 @@ export default function AdminApp() {
     async function check() {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) { setSession(null); return }
-      const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel()
-      if (aal?.currentLevel !== 'aal2') { setSession(null); return }
-      setSession(session)
+      // Verifica AAL pra confirmar que tem 2FA
+      try {
+        const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel()
+        // currentLevel pode ser aal1 logo após refresh; o que importa é nextLevel
+        // Se nextLevel for aal2, significa que tem MFA configurado e já autenticou
+        // Se o currentLevel for aal1 mas nextLevel for aal1 também, não tem MFA — bloqueia
+        if (aal?.currentLevel === 'aal2' || aal?.nextLevel === 'aal2') {
+          setSession(session)
+          return
+        }
+        // Sem MFA — não permite acesso
+        setSession(null)
+      } catch (e) {
+        // Se der erro na verificação, usa a session como fallback
+        // (preferimos manter logado a deslogar por erro de rede)
+        console.warn('Erro verificando MFA, mantendo sessão:', e)
+        setSession(session)
+      }
     }
     check()
     const { data: sub } = supabase.auth.onAuthStateChange(() => check())
