@@ -53,26 +53,44 @@ export default function AdminLogin() {
       if (signErr) throw signErr
       log('Login com senha OK')
 
-      log('Listando fatores MFA...')
-      const { data: factors, error: lfErr } = await Promise.race([
-        supabase.auth.mfa.listFactors(),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout em listFactors (10s)')), 10000)),
+      // Em vez de listFactors (que pode travar), usamos getAuthenticatorAssuranceLevel
+      log('Verificando nível MFA...')
+      const { data: aal, error: aalErr } = await Promise.race([
+        supabase.auth.mfa.getAuthenticatorAssuranceLevel(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout em getAuthenticatorAssuranceLevel (10s)')), 10000)),
       ])
-      if (lfErr) throw lfErr
-      log(`Fatores: ${JSON.stringify(factors?.totp?.length || 0)} TOTP encontrados`)
+      if (aalErr) throw aalErr
+      log(`AAL: current=${aal?.currentLevel}, next=${aal?.nextLevel}`)
 
-      const verifiedTotp = factors?.totp?.find((f) => f.status === 'verified')
+      // Se nextLevel é aal2, significa que tem TOTP verificado
+      if (aal?.nextLevel === 'aal2') {
+        // Precisamos do factorId — tentamos listFactors com timeout curto, com fallback
+        log('Buscando factor TOTP...')
+        let verifiedTotp = null
+        try {
+          const { data: factors } = await Promise.race([
+            supabase.auth.mfa.listFactors(),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('listFactors timeout')), 5000)),
+          ])
+          verifiedTotp = factors?.totp?.find((f) => f.status === 'verified')
+          log(`Factor encontrado: ${verifiedTotp?.id ? 'sim' : 'não'}`)
+        } catch (e) {
+          log(`listFactors falhou: ${e.message} — tentando challenge sem id`)
+        }
 
-      if (verifiedTotp) {
-        log('TOTP já configurado, criando challenge...')
-        const { data: challenge, error: chErr } = await supabase.auth.mfa.challenge({
-          factorId: verifiedTotp.id,
-        })
-        if (chErr) throw chErr
-        log('Challenge criado, indo pra tela TOTP')
-        setFactorId(verifiedTotp.id)
-        setChallengeId(challenge.id)
-        setStep('totp')
+        if (verifiedTotp) {
+          log('Criando challenge...')
+          const { data: challenge, error: chErr } = await supabase.auth.mfa.challenge({
+            factorId: verifiedTotp.id,
+          })
+          if (chErr) throw chErr
+          log('Challenge OK, indo pra tela TOTP')
+          setFactorId(verifiedTotp.id)
+          setChallengeId(challenge.id)
+          setStep('totp')
+        } else {
+          throw new Error('Você tem MFA mas não conseguimos achar o fator. Limpe o cache do navegador e tente de novo, ou contate o admin.')
+        }
       } else {
         log('Sem TOTP, iniciando enroll...')
         const { data: enroll, error: enErr } = await supabase.auth.mfa.enroll({
