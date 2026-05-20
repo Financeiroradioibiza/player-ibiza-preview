@@ -842,16 +842,15 @@ function UploadForm({ previewId, onUploaded }) {
     }
 
     try {
-      log('Renovando sessão...')
-      const { data: refreshed, error: refreshErr } = await supabase.auth.refreshSession()
-      if (refreshErr) log(`AVISO: erro refresh: ${refreshErr.message}`)
-      log('Sessão renovada (ou tentativa feita)')
-
-      const userResult = await supabase.auth.getUser()
-      const userData = refreshed?.user || userResult.data?.user
+      log('Buscando usuário...')
+      const userResult = await Promise.race([
+        supabase.auth.getUser(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout getUser (5s)')), 5000)),
+      ])
+      const userData = userResult.data?.user
       log(`User: ${userData?.id || 'NULL'}`)
       if (!userData) {
-        throw new Error('Sessão expirou. Faça login novamente.')
+        throw new Error('Sessão expirou. Recarregue a página e faça login novamente.')
       }
       const user = userData
 
