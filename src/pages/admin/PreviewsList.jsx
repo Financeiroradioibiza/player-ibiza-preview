@@ -62,7 +62,14 @@ export default function PreviewsList() {
             {previews.length} {previews.length === 1 ? 'preview' : 'previews'} nesta aba
           </p>
         </div>
-        <Link to="/admin/previews/new" className="btn btn-accent">+ Novo preview</Link>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <Link to="/admin/previews/new-embed" className="btn btn-ghost">
+            + Preview Spotify embed
+          </Link>
+          <Link to="/admin/previews/new" className="btn btn-accent">
+            + Novo preview
+          </Link>
+        </div>
       </div>
 
       <div style={{ display: 'flex', gap: 4, marginBottom: 20, borderBottom: '1px solid var(--border)' }}>
@@ -106,6 +113,13 @@ export default function PreviewsList() {
                   <tr key={p.id}>
                     <td style={{ fontWeight: 500 }}>
                       {p.client_name}
+                      {p.kind === 'embed' && (
+                        <span className="badge" style={{
+                          marginLeft: 8, background: '#1DB954', color: 'white', fontSize: 10,
+                        }}>
+                          Spotify
+                        </span>
+                      )}
                       {!isMine && (
                         <span className="badge" style={{
                           marginLeft: 8, background: 'var(--cream-soft)', color: 'var(--muted)', fontSize: 10,
